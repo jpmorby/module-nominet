@@ -2702,7 +2702,18 @@ class Nominet extends RegistrarModule
             Loader::loadModels($this, ['Contacts']);
         }
 
-        return $this->Contacts->intlNumber($number, $country, '.');
+        // Strip non-digit characters except + and .
+        $number = preg_replace('/[^0-9+.]/', '', $number ?? '');
+
+        // Strip trunk prefix (leading 0) for local numbers before internationalizing
+        if ($number !== '' && $number[0] !== '+') {
+            $number = ltrim($number, '0');
+        }
+
+        $formatted = $this->Contacts->intlNumber($number, $country, '.');
+
+        // Ensure no duplicate + prefix
+        return preg_replace('/^\++/', '+', $formatted);
     }
 
     /**
