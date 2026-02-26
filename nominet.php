@@ -1199,13 +1199,25 @@ class Nominet extends RegistrarModule
 
         // Update whois contact
         if (!empty($post)) {
-            $contacts = [];
-            foreach ($post as $external_id => $contact) {
-                $contact['external_id'] = $external_id;
-                $contacts[] = $contact;
+            // Validate each contact before submitting
+            $valid = true;
+            foreach ($post as $contact) {
+                if (!$this->validateContacts($contact)) {
+                    $valid = false;
+                    break;
+                }
             }
 
-            $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id);
+            if ($valid) {
+                $contacts = [];
+                foreach ($post as $external_id => $contact) {
+                    $contact['external_id'] = $external_id;
+                    $contacts[] = $contact;
+                }
+
+                $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id);
+            }
+
             $vars = (object) $post;
         }
 
@@ -1267,13 +1279,25 @@ class Nominet extends RegistrarModule
 
         // Update whois contact
         if (!empty($post)) {
-            $contacts = [];
-            foreach ($post as $external_id => $contact) {
-                $contact['external_id'] = $external_id;
-                $contacts[] = $contact;
+            // Validate each contact before submitting
+            $valid = true;
+            foreach ($post as $contact) {
+                if (!$this->validateContacts($contact)) {
+                    $valid = false;
+                    break;
+                }
             }
 
-            $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id);
+            if ($valid) {
+                $contacts = [];
+                foreach ($post as $external_id => $contact) {
+                    $contact['external_id'] = $external_id;
+                    $contacts[] = $contact;
+                }
+
+                $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id);
+            }
+
             $vars = (object) $post;
         }
 
@@ -2832,6 +2856,70 @@ class Nominet extends RegistrarModule
         }
 
         return $messages;
+    }
+
+    /**
+     * Validates contact fields for a registrant update.
+     *
+     * @param array $contact The contact data to validate
+     * @return bool True if valid, false otherwise. Sets Input errors on failure.
+     */
+    private function validateContacts(array $contact)
+    {
+        $rules = [
+            'first_name' => [
+                'empty' => [
+                    'rule' => 'isEmpty',
+                    'negate' => true,
+                    'message' => Language::_('Nominet.!error.contact.first_name.empty', true)
+                ]
+            ],
+            'last_name' => [
+                'empty' => [
+                    'rule' => 'isEmpty',
+                    'negate' => true,
+                    'message' => Language::_('Nominet.!error.contact.last_name.empty', true)
+                ]
+            ],
+            'email' => [
+                'valid' => [
+                    'rule' => 'isEmail',
+                    'message' => Language::_('Nominet.!error.contact.email.valid', true)
+                ]
+            ],
+            'phone' => [
+                'empty' => [
+                    'rule' => 'isEmpty',
+                    'negate' => true,
+                    'message' => Language::_('Nominet.!error.contact.phone.empty', true)
+                ]
+            ],
+            'address1' => [
+                'empty' => [
+                    'rule' => 'isEmpty',
+                    'negate' => true,
+                    'message' => Language::_('Nominet.!error.contact.address1.empty', true)
+                ]
+            ],
+            'city' => [
+                'empty' => [
+                    'rule' => 'isEmpty',
+                    'negate' => true,
+                    'message' => Language::_('Nominet.!error.contact.city.empty', true)
+                ]
+            ],
+            'country' => [
+                'empty' => [
+                    'rule' => 'isEmpty',
+                    'negate' => true,
+                    'message' => Language::_('Nominet.!error.contact.country.empty', true)
+                ]
+            ]
+        ];
+
+        $this->Input->setRules($rules);
+
+        return $this->Input->validates($contact);
     }
 
     /**

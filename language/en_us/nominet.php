@@ -65,6 +65,13 @@ $lang['Nominet.!error.ns2.valid'] = 'Invalid Name Server 2';
 $lang['Nominet.!error.ns3.valid'] = 'Invalid Name Server 3';
 $lang['Nominet.!error.ns4.valid'] = 'Invalid Name Server 4';
 $lang['Nominet.!error.ns5.valid'] = 'Invalid Name Server 5';
+$lang['Nominet.!error.contact.first_name.empty'] = 'First name is required.';
+$lang['Nominet.!error.contact.last_name.empty'] = 'Last name is required.';
+$lang['Nominet.!error.contact.email.valid'] = 'A valid email address is required.';
+$lang['Nominet.!error.contact.phone.empty'] = 'Phone number is required.';
+$lang['Nominet.!error.contact.address1.empty'] = 'Address is required.';
+$lang['Nominet.!error.contact.city.empty'] = 'City is required.';
+$lang['Nominet.!error.contact.country.empty'] = 'Country is required.';
 
 
 // Service info
@@ -111,9 +118,7 @@ $lang['Nominet.contact_fields.phone'] = 'Phone';
 
 // Contacts tab
 $lang['Nominet.tab_whois.title'] = 'Contacts';
-$lang['Nominet.tab_whois.section_admin'] = 'Administrative';
-$lang['Nominet.tab_whois.section_tech'] = 'Technical';
-$lang['Nominet.tab_whois.section_billing'] = 'Billing';
+$lang['Nominet.tab_whois.section_registrant'] = 'Registrant';
 $lang['Nominet.tab_whois.field_submit'] = 'Update Contacts';
 
 
@@ -153,10 +158,8 @@ $lang['Nominet.tab_settings.field_submit'] = 'Update Domain';
 
 // Client contacts tab
 $lang['Nominet.tab_client_whois.title'] = 'Contacts';
-$lang['Nominet.tab_client_whois.heading'] = 'Contacts';
-$lang['Nominet.tab_client_whois.section_admin'] = 'Administrative';
-$lang['Nominet.tab_client_whois.section_tech'] = 'Technical';
-$lang['Nominet.tab_client_whois.section_billing'] = 'Billing';
+$lang['Nominet.tab_client_whois.heading'] = 'Registrant Contact';
+$lang['Nominet.tab_client_whois.section_registrant'] = 'Registrant';
 $lang['Nominet.tab_client_whois.field_submit'] = 'Update Contacts';
 
 
