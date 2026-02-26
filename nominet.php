@@ -22,14 +22,8 @@ class Nominet extends RegistrarModule
      * @var array An array containing the EPP servers for live and sandbox requests
      */
     private $endpoint = [
-        'live' => [
-            'secure' => ['server' => 'epp.nominet.org.uk', 'port' => 700],
-            'insecure' => ['server' => 'epp.nominet.org.uk', 'port' => 8700]
-        ],
-        'sandbox' => [
-            'secure' => ['server' => 'testbed-epp.nominet.org.uk', 'port' => 700],
-            'insecure' => ['server' => 'testbed-epp.nominet.org.uk', 'port' => 8700]
-        ]
+        'live' => ['server' => 'epp.nominet.org.uk', 'port' => 700],
+        'sandbox' => ['server' => 'testbed-epp.nominet.org.uk', 'port' => 700]
     ];
 
     /**
@@ -47,6 +41,104 @@ class Nominet extends RegistrarModule
         $this->loadConfig(dirname(__FILE__) . DS . 'config.json');
 
         Configure::load('nominet', dirname(__FILE__) . DS . 'config' . DS);
+    }
+
+    /**
+     * Performs any necessary bootstrapping actions on install.
+     */
+    public function install()
+    {
+        $this->addCronTasks($this->getCronTasks());
+    }
+
+    /**
+     * Performs migration of data from $current_version (the current installed version)
+     * to the given file set version.
+     *
+     * @param string $current_version The current installed version of this module
+     */
+    public function upgrade($current_version)
+    {
+        if (version_compare($this->getVersion(), $current_version, '>')) {
+            if (version_compare($current_version, '1.2.1', '<')) {
+                $this->addCronTasks($this->getCronTasks());
+            }
+        }
+    }
+
+    /**
+     * Performs any necessary cleanup actions when the module is uninstalled.
+     *
+     * @param int $module_id The ID of the module being uninstalled
+     * @param bool $last_instance True if this is the last instance of the module across companies
+     */
+    public function uninstall($module_id, $last_instance)
+    {
+        Loader::loadModels($this, ['CronTasks']);
+
+        $cron_tasks = $this->getCronTasks();
+
+        if ($last_instance) {
+            foreach ($cron_tasks as $task) {
+                $cron_task = $this->CronTasks->getByKey($task['key'], $task['dir'], $task['task_type']);
+                if ($cron_task) {
+                    $this->CronTasks->deleteTask($cron_task->id, $task['task_type'], $task['dir']);
+                }
+            }
+        }
+
+        foreach ($cron_tasks as $task) {
+            $cron_task_run = $this->CronTasks->getTaskRunByKey($task['key'], $task['dir'], false, $task['task_type']);
+            if ($cron_task_run) {
+                $this->CronTasks->deleteTaskRun($cron_task_run->task_run_id);
+            }
+        }
+    }
+
+    /**
+     * Runs the cron task identified by the given key.
+     *
+     * @param string $key The cron task key
+     * @return mixed The result of the cron task
+     */
+    public function cron($key)
+    {
+        if ($key === 'process_poll') {
+            return $this->processPollQueue();
+        }
+
+        return [];
+    }
+
+    /**
+     * Processes the Nominet poll queue for all module rows.
+     *
+     * @return array An array of log entry strings for the cron log
+     */
+    private function processPollQueue()
+    {
+        $logs = [];
+        $rows = $this->getModuleRows();
+
+        if (!is_array($rows)) {
+            return ['No module rows available for polling.'];
+        }
+
+        foreach ($rows as $row) {
+            if (empty($row->meta->username)) {
+                $logs[] = 'Skipping module row ' . ($row->id ?? '?') . ': no credentials configured.';
+                continue;
+            }
+
+            try {
+                $messages = $this->pollMessages($row->id);
+                $logs[] = 'Polled ' . count($messages) . ' message(s) for account ' . $row->meta->username;
+            } catch (Throwable $e) {
+                $logs[] = 'Error polling account ' . $row->meta->username . ': ' . $e->getMessage();
+            }
+        }
+
+        return $logs;
     }
 
     /**
@@ -402,7 +494,7 @@ class Nominet extends RegistrarModule
      * @see Module::getModule()
      * @see Module::getModuleRow()
      */
-    public function addPackage(array $vars = null)
+    public function addPackage(?array $vars = null)
     {
         // Set rules to validate input data
         $this->Input->setRules($this->getPackageRules($vars));
@@ -443,7 +535,7 @@ class Nominet extends RegistrarModule
      * @see Module::getModule()
      * @see Module::getModuleRow()
      */
-    public function editPackage($package, array $vars = null)
+    public function editPackage($package, ?array $vars = null)
     {
         // Set rules to validate input data
         $this->Input->setRules($this->getPackageRules($vars));
@@ -594,12 +686,12 @@ class Nominet extends RegistrarModule
      */
     public function addService(
         $package,
-        array $vars = null,
+        ?array $vars = null,
         $parent_package = null,
         $parent_service = null,
         $status = 'pending'
     ) {
-        if (($row = $this->getModuleRow())) {
+        if (($row = $this->getModuleRowById($package->module_row ?? null))) {
 
             // Validate service
             $this->validateService($package, $vars);
@@ -628,6 +720,7 @@ class Nominet extends RegistrarModule
                 // Register domain
                 $params = [
                     'contact' => [
+                        'org_name' => $client->company ?? '',
                         'first_name' => $client->first_name ?? '',
                         'last_name' => $client->last_name ?? '',
                         'address1' => $client->address1 ?? '',
@@ -684,47 +777,33 @@ class Nominet extends RegistrarModule
      * @see Module::getModule()
      * @see Module::getModuleRow()
      */
-    public function editService($package, $service, array $vars = null, $parent_package = null, $parent_service = null)
+    public function editService($package, $service, ?array $vars = null, $parent_package = null, $parent_service = null)
     {
-        if (($row = $this->getModuleRow())) {
-            $service_fields = $this->serviceFieldsToObject($service->fields);
-
-            $this->validateService($package, $vars, true);
-            if ($this->Input->errors()) {
-                return;
-            }
-
-            // Format input
-            $vars = $this->getFieldsFromInput($vars, $package);
-
-            // Only update the service if 'use_module' is true
-            if ($vars['use_module'] == 'true') {
-                // Update nameservers
-                if (isset($vars['ns']) && is_array($vars['ns'])) {
-                    $this->setDomainNameservers($this->getServiceDomain($service), $row->id, $vars['ns']);
-                }
-            }
-        } else {
+        $row = $this->getModuleRowById($service->module_row_id ?? $package->module_row ?? null);
+        if (!$row) {
             $this->Input->setErrors(
                 ['module_row' => ['missing' => Language::_('Nominet.!error.module_row.missing', true)]]
             );
+            return;
         }
 
-        // Return all the service fields
-        $encrypted_fields = [];
-        $return = [];
-        $fields = ['domain', 'enable_tag'];
-        foreach ($fields as $field) {
-            if (isset($vars[$field]) || isset($service_fields[$field])) {
-                $return[] = [
-                    'key' => $field,
-                    'value' => $vars[$field] ?? $service_fields[$field],
-                    'encrypted' => (in_array($field, $encrypted_fields) ? 1 : 0)
-                ];
+        $this->validateService($package, $vars, true);
+        if ($this->Input->errors()) {
+            return;
+        }
+
+        // Format input
+        $vars = $this->getFieldsFromInput($vars, $package);
+
+        // Only update the service if 'use_module' is true
+        if ($vars['use_module'] == 'true') {
+            // Update nameservers
+            if (isset($vars['ns']) && is_array($vars['ns'])) {
+                $this->setDomainNameservers($this->getServiceDomain($service), $row->id, $vars['ns']);
             }
         }
 
-        return $return;
+        return null;
     }
 
     /**
@@ -747,7 +826,7 @@ class Nominet extends RegistrarModule
      */
     public function renewService($package, $service, $parent_package = null, $parent_service = null)
     {
-        if (($row = $this->getModuleRow())) {
+        if (($row = $this->getModuleRowById($service->module_row_id ?? $package->module_row ?? null))) {
             // Get renew period
             $period = 1;
             $period_unit = 'year';
@@ -797,7 +876,7 @@ class Nominet extends RegistrarModule
      */
     public function cancelService($package, $service, $parent_package = null, $parent_service = null)
     {
-        if (($row = $this->getModuleRow())) {
+        if (($row = $this->getModuleRowById($service->module_row_id ?? $package->module_row ?? null))) {
             $domain = $this->getServiceDomain($service);
 
             if ($domain) {
@@ -839,7 +918,7 @@ class Nominet extends RegistrarModule
      * @param array $vars An array of user supplied info to satisfy the request
      * @return bool True if the service validates, false otherwise. Sets Input errors when false.
      */
-    public function validateService($package, array $vars = null)
+    public function validateService($package, ?array $vars = null)
     {
         $this->Input->setRules($this->getServiceRules($vars));
 
@@ -853,7 +932,7 @@ class Nominet extends RegistrarModule
      * @param array $vars An array of user-supplied info to satisfy the request
      * @return bool True if the service update validates or false otherwise. Sets Input errors when false.
      */
-    public function validateServiceEdit($service, array $vars = null)
+    public function validateServiceEdit($service, ?array $vars = null)
     {
         $this->Input->setRules($this->getServiceRules($vars, true));
 
@@ -867,7 +946,7 @@ class Nominet extends RegistrarModule
      * @param bool $edit True to get the edit rules, false for the add rules
      * @return array Service rules
      */
-    private function getServiceRules(array &$vars = null, $edit = false)
+    private function getServiceRules(?array &$vars = null, $edit = false)
     {
         // Validate the service fields
         $rules = [
@@ -1172,9 +1251,9 @@ class Nominet extends RegistrarModule
     public function tabWhois(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_whois', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1187,7 +1266,7 @@ class Nominet extends RegistrarModule
 
         // Fetch domain contacts
         try {
-            $contacts = $this->getDomainContacts($service_fields->domain, $service->module_row_id);
+            $contacts = $this->getDomainContacts($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
             $vars = [];
             foreach ($contacts as $contact) {
                 $vars[$contact->external_id] = (array) $contact;
@@ -1215,7 +1294,7 @@ class Nominet extends RegistrarModule
                     $contacts[] = $contact;
                 }
 
-                $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id);
+                $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id ?? $package->module_row ?? null);
             }
 
             $vars = (object) $post;
@@ -1252,9 +1331,9 @@ class Nominet extends RegistrarModule
     public function tabClientWhois(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_client_whois', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1267,7 +1346,7 @@ class Nominet extends RegistrarModule
 
         // Fetch domain contacts
         try {
-            $contacts = $this->getDomainContacts($service_fields->domain, $service->module_row_id);
+            $contacts = $this->getDomainContacts($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
             $vars = [];
             foreach ($contacts as $contact) {
                 $vars[$contact->external_id] = (array) $contact;
@@ -1295,7 +1374,7 @@ class Nominet extends RegistrarModule
                     $contacts[] = $contact;
                 }
 
-                $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id);
+                $this->setDomainContacts($service_fields->domain, $contacts, $service->module_row_id ?? $package->module_row ?? null);
             }
 
             $vars = (object) $post;
@@ -1332,9 +1411,9 @@ class Nominet extends RegistrarModule
     public function tabNameservers(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_nameservers', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1348,7 +1427,7 @@ class Nominet extends RegistrarModule
         // Fetch domain nameservers
         $vars = (object) [];
         try {
-            $nameservers = $this->getDomainNameServers($service_fields->domain, $service->module_row_id);
+            $nameservers = $this->getDomainNameServers($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
 
             if (empty($nameservers)) {
                 $i = 1;
@@ -1377,7 +1456,7 @@ class Nominet extends RegistrarModule
                 }
             }
 
-            $this->setDomainNameservers($service_fields->domain, $service->module_row_id, $ns);
+            $this->setDomainNameservers($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $ns);
             $vars = (object) $post;
         }
 
@@ -1405,9 +1484,9 @@ class Nominet extends RegistrarModule
     public function tabClientNameservers(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_client_nameservers', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1421,7 +1500,7 @@ class Nominet extends RegistrarModule
         // Fetch domain nameservers
         $vars = (object) [];
         try {
-            $nameservers = $this->getDomainNameServers($service_fields->domain, $service->module_row_id);
+            $nameservers = $this->getDomainNameServers($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
 
             if (empty($nameservers)) {
                 $i = 1;
@@ -1450,7 +1529,7 @@ class Nominet extends RegistrarModule
                 }
             }
 
-            $this->setDomainNameservers($service_fields->domain, $service->module_row_id, $ns);
+            $this->setDomainNameservers($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $ns);
             $vars = (object) $post;
         }
 
@@ -1478,9 +1557,9 @@ class Nominet extends RegistrarModule
     public function tabDnssec(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_dnssec', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1494,19 +1573,19 @@ class Nominet extends RegistrarModule
         // Fetch domain DNSSEC
         $dnssec = [];
         try {
-            $dnssec = $this->getDnssec($service_fields->domain, $service->module_row_id);
+            $dnssec = $this->getDnssec($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
         } catch (Throwable $e) {
             $this->Input->setErrors(['errors' => ['dnssec' => $e->getMessage()]]);
         }
 
         // Delete exist record
         if (!empty($post) && (($post['action'] ?? 'add') == 'delete')) {
-            $this->deleteDnssec($service_fields->domain, $service->module_row_id, $post);
+            $this->deleteDnssec($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $post);
         }
 
         // Add new record
         if (!empty($post) && (($post['action'] ?? 'add') !== 'delete')) {
-            $this->addDnssec($service_fields->domain, $service->module_row_id, $post);
+            $this->addDnssec($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $post);
             $vars = (object) $post;
         }
 
@@ -1537,9 +1616,9 @@ class Nominet extends RegistrarModule
     public function tabClientDnssec(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_client_dnssec', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1553,19 +1632,19 @@ class Nominet extends RegistrarModule
         // Fetch domain DNSSEC
         $dnssec = [];
         try {
-            $dnssec = $this->getDnssec($service_fields->domain, $service->module_row_id);
+            $dnssec = $this->getDnssec($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
         } catch (Throwable $e) {
             $this->Input->setErrors(['errors' => ['dnssec' => $e->getMessage()]]);
         }
 
         // Delete exist record
         if (!empty($post) && (($post['action'] ?? 'add') == 'delete')) {
-            $this->deleteDnssec($service_fields->domain, $service->module_row_id, $post);
+            $this->deleteDnssec($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $post);
         }
 
         // Add new record
         if (!empty($post) && (($post['action'] ?? 'add') !== 'delete')) {
-            $this->addDnssec($service_fields->domain, $service->module_row_id, $post);
+            $this->addDnssec($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $post);
             $vars = (object) $post;
         }
 
@@ -1596,9 +1675,9 @@ class Nominet extends RegistrarModule
     public function tabSettings(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_settings', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1614,11 +1693,11 @@ class Nominet extends RegistrarModule
 
         // Push domain
         if (!empty($post) && $ips_tag == '1') {
-            $this->pushDomain($service_fields->domain, $service->module_row_id, $post);
+            $this->pushDomain($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $post);
         }
 
         // Get domain information
-        $domain = $this->getDomainInfo($service_fields->domain, $service->module_row_id);
+        $domain = $this->getDomainInfo($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
 
         // Determine if this service has access to epp_code
         $epp_code = $package->meta->epp_code ?? '0';
@@ -1649,9 +1728,9 @@ class Nominet extends RegistrarModule
     public function tabClientSettings(
         $package,
         $service,
-        array $get = null,
-        array $post = null,
-        array $files = null
+        ?array $get = null,
+        ?array $post = null,
+        ?array $files = null
     ) {
         $this->view = new View('tab_client_settings', 'default');
         $this->view->base_uri = $this->base_uri;
@@ -1667,11 +1746,11 @@ class Nominet extends RegistrarModule
 
         // Push domain
         if (!empty($post) && $ips_tag == '1') {
-            $this->pushDomain($service_fields->domain, $service->module_row_id, $post);
+            $this->pushDomain($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null, $post);
         }
 
         // Get domain information
-        $domain = $this->getDomainInfo($service_fields->domain, $service->module_row_id);
+        $domain = $this->getDomainInfo($service_fields->domain, $service->module_row_id ?? $package->module_row ?? null);
 
         // Determine if this service has access to epp_code
         $epp_code = $package->meta->epp_code ?? '0';
@@ -1698,7 +1777,7 @@ class Nominet extends RegistrarModule
      */
     public function checkAvailability($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         // Check with the EPP server if the domain is available
@@ -1742,7 +1821,7 @@ class Nominet extends RegistrarModule
      */
     public function getDomainInfo($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -1789,9 +1868,9 @@ class Nominet extends RegistrarModule
     public function getExpirationDate($service, $format = 'Y-m-d H:i:s')
     {
         $domain = $this->getServiceDomain($service);
-        $module_row_id = $service->module_row_id ?? null;
+        $module_row_id = $service->module_row_id ?? $service->package->module_row ?? null;
 
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -1829,9 +1908,9 @@ class Nominet extends RegistrarModule
     public function getRegistrationDate($service, $format = 'Y-m-d H:i:s')
     {
         $domain = $this->getServiceDomain($service);
-        $module_row_id = $service->module_row_id ?? null;
+        $module_row_id = $service->module_row_id ?? $service->package->module_row ?? null;
 
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -1891,22 +1970,18 @@ class Nominet extends RegistrarModule
     public function registerDomain($domain, $module_row_id = null, array $vars = [])
     {
         Loader::loadHelpers($this, ['Html']);
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         // Add contact
         $contact_id = null;
         if (isset($vars['contact'])) {
-            if (empty($vars['contact']['company'])) {
-                $vars['contact']['company'] = null;
-            }
-
             $contact = new Metaregistrar\EPP\eppContact(
                 new Metaregistrar\EPP\eppContactPostalInfo(
                     $this->Html->concat(' ', ($vars['contact']['first_name'] ?? ''), ($vars['contact']['last_name'] ?? '')),
                     $vars['contact']['city'] ?? '',
                     $vars['contact']['country'] ?? '',
-                    $vars['contact']['company'] ?? '',
+                    $vars['contact']['org_name'] ?? '',
                     $vars['contact']['address1'] ?? '',
                     $vars['contact']['state'] ?? '',
                     $vars['contact']['zip'] ?? '',
@@ -1919,7 +1994,12 @@ class Nominet extends RegistrarModule
             );
             $contact->setPassword($this->generatePassword());
 
-            $response = $this->request($api, new Metaregistrar\EPP\eppCreateContactRequest($contact));
+            $response = $this->request($api, new NominetEppCreateContactRequest(
+                $contact,
+                $vars['contact']['type'] ?? null,
+                $vars['contact']['trad_name'] ?? null,
+                $vars['contact']['co_no'] ?? null
+            ));
             if ($response) {
                 $contact_id = $response->getContactId();
             }
@@ -1964,7 +2044,7 @@ class Nominet extends RegistrarModule
      */
     public function renewDomain($domain, $module_row_id = null, array $vars = [])
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         // Renew the domain
@@ -1992,7 +2072,7 @@ class Nominet extends RegistrarModule
      */
     public function deleteDomain($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppDeleteDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2039,7 +2119,7 @@ class Nominet extends RegistrarModule
      */
     private function pushDomain($domain, $module_row_id = null, array $vars = [])
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
@@ -2078,7 +2158,7 @@ class Nominet extends RegistrarModule
      */
     public function getDomainContacts($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2118,9 +2198,16 @@ class Nominet extends RegistrarModule
                 $name = explode(' ', $contact->getContactName(), 2);
             }
 
+            // Read Nominet extension data (type, trad-name, co-no) from response
+            $nominet_ext = $this->parseNominetContactExtension($contact);
+
             // Format contact
             $formatted_contacts[] = (object) [
                 'external_id' => $type,
+                'org_name' => $contact->getContactCompanyname() ?? '',
+                'type' => $nominet_ext['type'] ?? '',
+                'trad_name' => $nominet_ext['trad_name'] ?? '',
+                'co_no' => $nominet_ext['co_no'] ?? '',
                 'email' => $contact->getContactEmail(),
                 'phone' => $contact->getContactVoice(),
                 'first_name' => $name[0] ?? '',
@@ -2146,7 +2233,7 @@ class Nominet extends RegistrarModule
      */
     public function getDomainIsLocked($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2183,7 +2270,7 @@ class Nominet extends RegistrarModule
      */
     public function getDomainNameServers($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2229,7 +2316,7 @@ class Nominet extends RegistrarModule
      */
     public function lockDomain($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2322,7 +2409,7 @@ class Nominet extends RegistrarModule
     public function setDomainContacts($domain, array $vars = [], $module_row_id = null)
     {
         Loader::loadHelpers($this, ['Html']);
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
@@ -2346,16 +2433,12 @@ class Nominet extends RegistrarModule
                     continue;
                 }
 
-                if (empty($contact['company'])) {
-                    $contact['company'] = null;
-                }
-
                 $epp_contact = new Metaregistrar\EPP\eppContact(
                     new Metaregistrar\EPP\eppContactPostalInfo(
                         $this->Html->concat(' ', ($contact['first_name'] ?? ''), ($contact['last_name'] ?? '')),
                         $contact['city'] ?? '',
                         $contact['country'] ?? '',
-                        $contact['company'] ?? '',
+                        $contact['org_name'] ?? '',
                         $contact['address1'] ?? '',
                         $contact['state'] ?? '',
                         $contact['zip'] ?? '',
@@ -2367,15 +2450,18 @@ class Nominet extends RegistrarModule
                     $this->formatPhone($contact['phone'] ?? '', $contact['country'] ?? 'UK')
                 );
 
-                // Update existing contact in-place rather than creating a new one
+                // Update existing contact in-place with Nominet extension data
                 if (!empty($registrant)) {
                     $response = $this->request(
                         $api,
-                        new Metaregistrar\EPP\eppUpdateContactRequest(
+                        new NominetEppUpdateContactRequest(
                             new Metaregistrar\EPP\eppContactHandle($registrant),
                             null,
                             null,
-                            $epp_contact
+                            $epp_contact,
+                            $contact['type'] ?? null,
+                            $contact['trad_name'] ?? null,
+                            $contact['co_no'] ?? null
                         )
                     );
 
@@ -2413,7 +2499,7 @@ class Nominet extends RegistrarModule
      */
     public function setDomainNameservers($domain, $module_row_id = null, array $vars = [])
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
@@ -2476,7 +2562,7 @@ class Nominet extends RegistrarModule
      */
     public function setNameserverIps(array $vars = [], $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|setNameserverIps', json_encode(compact('vars')), 'input', true);
@@ -2554,7 +2640,7 @@ class Nominet extends RegistrarModule
      */
     public function unlockDomain($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2585,7 +2671,7 @@ class Nominet extends RegistrarModule
      */
     public function updateEppCode($domain, $epp_code, $module_row_id = null, array $vars = [])
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2623,7 +2709,7 @@ class Nominet extends RegistrarModule
      */
     private function getDnssec($domain, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
@@ -2664,7 +2750,7 @@ class Nominet extends RegistrarModule
      */
     private function addDnssec($domain, $module_row_id = null, array $vars = [])
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppDnssecUpdateDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
@@ -2712,7 +2798,7 @@ class Nominet extends RegistrarModule
      */
     private function deleteDnssec($domain, $module_row_id = null, array $vars = [])
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppDnssecUpdateDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
@@ -2800,7 +2886,7 @@ class Nominet extends RegistrarModule
      */
     public function deleteContact($contact_id, $module_row_id = null)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $this->log($row->meta->username . '|eppDeleteContactRequest', json_encode(compact('contact_id')), 'input', true);
@@ -2819,9 +2905,9 @@ class Nominet extends RegistrarModule
      * @param int $module_row_id The ID of the module row to fetch for the current module
      * @return array An array of processed messages
      */
-    public function pollMessages($module_row_id = null)
+    public function pollMessages($module_row_id = null, $max_messages = 100)
     {
-        $row = $this->getModuleRow($module_row_id);
+        $row = $this->getModuleRowById($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
         $messages = [];
@@ -2830,7 +2916,7 @@ class Nominet extends RegistrarModule
             $poll = new Metaregistrar\EPP\eppPollRequest(Metaregistrar\EPP\eppPollRequest::POLL_REQ);
             $response = $this->request($api, $poll);
 
-            while ($response && $response->getResultCode() == 1301) {
+            while ($response && $response->getResultCode() == 1301 && count($messages) < $max_messages) {
                 $message_id = $response->getMessageId();
                 $messages[] = [
                     'id' => $message_id,
@@ -2856,6 +2942,96 @@ class Nominet extends RegistrarModule
         }
 
         return $messages;
+    }
+
+    /**
+     * Returns the cron task definitions for this module.
+     *
+     * @return array An array of cron task definitions
+     */
+    private function getCronTasks()
+    {
+        return [
+            [
+                'key' => 'process_poll',
+                'task_type' => 'module',
+                'dir' => 'nominet',
+                'name' => Language::_('Nominet.getCronTasks.process_poll_name', true),
+                'description' => Language::_('Nominet.getCronTasks.process_poll_desc', true),
+                'type' => 'interval',
+                'type_value' => 15,
+                'enabled' => 1
+            ]
+        ];
+    }
+
+    /**
+     * Registers cron tasks with Blesta's CronTasks model.
+     *
+     * @param array $tasks An array of cron task definitions
+     */
+    private function addCronTasks(array $tasks)
+    {
+        Loader::loadModels($this, ['CronTasks']);
+
+        foreach ($tasks as $task) {
+            $task_id = $this->CronTasks->add($task);
+
+            if (!$task_id) {
+                $cron_task = $this->CronTasks->getByKey($task['key'], $task['dir'], $task['task_type']);
+                if ($cron_task) {
+                    $task_id = $cron_task->id;
+                }
+            }
+
+            if ($task_id) {
+                $task_vars = ['enabled' => $task['enabled']];
+                if ($task['type'] === 'time') {
+                    $task_vars['time'] = $task['type_value'];
+                } else {
+                    $task_vars['interval'] = $task['type_value'];
+                }
+
+                $this->CronTasks->addTaskRun($task_id, $task_vars);
+            }
+        }
+    }
+
+    /**
+     * Parses Nominet contact extension data (type, trad-name, co-no) from
+     * an EPP contact:info response.
+     *
+     * @param \Metaregistrar\EPP\eppInfoContactResponse $response The contact info response
+     * @return array Associative array with keys: type, trad_name, co_no
+     */
+    private function parseNominetContactExtension($response)
+    {
+        $data = ['type' => '', 'trad_name' => '', 'co_no' => ''];
+        $ns = 'http://www.nominet.org.uk/epp/xml/contact-nom-ext-1.0';
+
+        $nodes = $response->getElementsByTagNameNS($ns, 'infData');
+        if ($nodes->length === 0) {
+            return $data;
+        }
+
+        $infData = $nodes->item(0);
+
+        $typeNodes = $infData->getElementsByTagNameNS($ns, 'type');
+        if ($typeNodes->length > 0) {
+            $data['type'] = $typeNodes->item(0)->textContent;
+        }
+
+        $tradNodes = $infData->getElementsByTagNameNS($ns, 'trad-name');
+        if ($tradNodes->length > 0) {
+            $data['trad_name'] = $tradNodes->item(0)->textContent;
+        }
+
+        $coNodes = $infData->getElementsByTagNameNS($ns, 'co-no');
+        if ($coNodes->length > 0) {
+            $data['co_no'] = $coNodes->item(0)->textContent;
+        }
+
+        return $data;
     }
 
     /**
@@ -2950,6 +3126,44 @@ class Nominet extends RegistrarModule
     }
 
     /**
+     * Fetches a module row by ID with a fallback for contexts where $this->module
+     * may not be set (e.g. client-side tab rendering), which causes the base class
+     * getModuleRow() to return false despite the row existing.
+     *
+     * @param int|null $module_row_id The module row ID
+     * @return stdClass|false The module row object, or false if not found
+     */
+    private function getModuleRowById($module_row_id = null)
+    {
+        // Try the base class method first (checks module_id ownership).
+        // Wrapped in try/catch because in some contexts $this->module may
+        // be null, and the base class accesses $this->module->id which
+        // throws a TypeError in PHP 8+.
+        try {
+            $row = $this->getModuleRow($module_row_id);
+        } catch (\Throwable $e) {
+            $row = false;
+        }
+
+        if (!$row && $module_row_id) {
+            if (!isset($this->ModuleManager)) {
+                Loader::loadModels($this, ['ModuleManager']);
+            }
+            $row = $this->ModuleManager->getRow($module_row_id);
+        }
+
+        // Final fallback: use the first available module row.
+        // Handles client context where both $service->module_row_id and
+        // $package->module_row may be null.
+        if (!$row) {
+            $rows = $this->getModuleRows();
+            $row = !empty($rows) ? $rows[0] : null;
+        }
+
+        return $row;
+    }
+
+    /**
      * Initializes the Nominet EPP server and returns an instance of the connection.
      *
      * @param string $password The Nominet password
@@ -2960,6 +3174,13 @@ class Nominet extends RegistrarModule
      */
     private function getApi($username, $password, $secure = 'false', $sandbox = 'false')
     {
+        if (empty($username)) {
+            throw new \RuntimeException(
+                'EPP credentials not available. The Nominet module row may not be properly linked. '
+                . 'Re-save the account under Settings > Modules > Nominet.'
+            );
+        }
+
         // Return cached connection if available
         if (isset($this->api_connections[$username])) {
             return $this->api_connections[$username];
@@ -2969,15 +3190,17 @@ class Nominet extends RegistrarModule
         Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'epp_domain.php');
         Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'epp_domain_request.php');
         Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'epp_contact_handle.php');
+        Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'nominet_epp_create_contact_request.php');
+        Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'nominet_epp_update_contact_request.php');
 
         $connection = new NominetEppConnection();
 
-        // Set Hostname
-        $hostname = $this->endpoint[($sandbox == 'true' ? 'sandbox' : 'live')][($secure == 'true' ? 'secure' : 'insecure')]['server'];
-        $connection->setHostname(($secure == 'true' ? 'ssl://' : '') . $hostname);
+        // Nominet requires SSL/TLS on port 700 for all environments
+        $env = $sandbox == 'true' ? 'sandbox' : 'live';
+        $hostname = $this->endpoint[$env]['server'];
+        $port = $this->endpoint[$env]['port'];
 
-        // Set port
-        $port = $this->endpoint[($sandbox == 'true' ? 'sandbox' : 'live')][($secure == 'true' ? 'secure' : 'insecure')]['port'];
+        $connection->setHostname('ssl://' . $hostname);
         $connection->setPort($port);
 
         // Set credentials
@@ -2985,10 +3208,12 @@ class Nominet extends RegistrarModule
         $connection->setPassword($password);
 
         // Login to server
-        $this->log($username . '|login', json_encode(compact('hostname', 'username', 'port', 'secure')), 'input', true);
+        $this->log($username . '|login', json_encode(compact('hostname', 'username', 'port')), 'input', true);
 
         try {
-            $connection->login();
+            if (!$connection->login()) {
+                throw new \RuntimeException('Login failed or connection could not be established');
+            }
         } catch (Throwable $e) {
             if (isset($this->Input)) {
                 $this->Input->setErrors(['exception' => ['message' => $e->getMessage()]]);

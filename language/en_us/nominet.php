@@ -114,6 +114,10 @@ $lang['Nominet.contact_fields.state'] = 'State';
 $lang['Nominet.contact_fields.zip'] = 'Zip Code';
 $lang['Nominet.contact_fields.country'] = 'Country';
 $lang['Nominet.contact_fields.phone'] = 'Phone';
+$lang['Nominet.contact_fields.org_name'] = 'Organization Name';
+$lang['Nominet.contact_fields.type'] = 'Registrant Type';
+$lang['Nominet.contact_fields.trad_name'] = 'Trading Name';
+$lang['Nominet.contact_fields.co_no'] = 'Company Number';
 
 
 // Contacts tab
@@ -195,3 +199,8 @@ $lang['Nominet.tab_client_settings.text_push_domain'] = 'Transfer (push) the dom
 $lang['Nominet.tab_client_settings.text_auth_code'] = 'Use this authorization code to transfer your domain to another provider.';
 $lang['Nominet.tab_client_settings.field_tag'] = 'IPS Tag';
 $lang['Nominet.tab_client_settings.field_submit'] = 'Update Domain';
+
+
+// Cron Tasks
+$lang['Nominet.getCronTasks.process_poll_name'] = 'Process Nominet Poll Queue';
+$lang['Nominet.getCronTasks.process_poll_desc'] = 'Retrieves and acknowledges pending messages from the Nominet EPP message queue.';

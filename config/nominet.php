@@ -73,6 +73,40 @@ Configure::set('Nominet.tag_fields', [
 
 // Contact fields
 Configure::set('Nominet.contact_fields', [
+    'org_name' => [
+        'label' => Language::_('Nominet.contact_fields.org_name', true),
+        'type' => 'text'
+    ],
+    'type' => [
+        'label' => Language::_('Nominet.contact_fields.type', true),
+        'type' => 'select',
+        'options' => [
+            'LTD' => 'UK Limited Company',
+            'PLC' => 'UK Public Limited Company',
+            'PTNR' => 'UK Partnership',
+            'STRA' => 'UK Sole Trader',
+            'LLP' => 'UK Limited Liability Partnership',
+            'IP' => 'UK Industrial/Provident Company',
+            'IND' => 'UK Individual',
+            'SCH' => 'UK School',
+            'RCHAR' => 'UK Registered Charity',
+            'GOV' => 'UK Government Body',
+            'CRC' => 'UK Corporation by Royal Charter',
+            'STAT' => 'UK Statutory Body',
+            'OTHER' => 'UK Other',
+            'FIND' => 'Non-UK Individual',
+            'FCORP' => 'Non-UK Corporation',
+            'FOTHER' => 'Non-UK Other',
+        ]
+    ],
+    'trad_name' => [
+        'label' => Language::_('Nominet.contact_fields.trad_name', true),
+        'type' => 'text'
+    ],
+    'co_no' => [
+        'label' => Language::_('Nominet.contact_fields.co_no', true),
+        'type' => 'text'
+    ],
     'email' => [
         'label' => Language::_('Nominet.contact_fields.email', true),
         'type' => 'text'
