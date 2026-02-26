@@ -2254,19 +2254,12 @@ class Nominet extends RegistrarModule
             return false;
         }
 
-        // Set contact type
-        foreach ($vars as $key => &$contact) {
-            switch ($key) {
-                case 'registrant':
-                    $contact['external_id'] = NominetEppContactHandle::CONTACT_TYPE_REGISTRANT;
-                    break;
-            }
-        }
-        unset($contact);
+        // Get the existing registrant contact ID from the domain
+        $registrant = $info->getDomainRegistrant();
 
         try {
-            // Create contacts
-            foreach ($vars as &$contact) {
+            // Update contacts
+            foreach ($vars as $contact) {
                 if (empty($contact['first_name']) && empty($contact['last_name'])) {
                     continue;
                 }
@@ -2291,36 +2284,26 @@ class Nominet extends RegistrarModule
                     $contact['email'] ?? '',
                     $this->formatPhone($contact['phone'] ?? '', $contact['country'] ?? 'UK')
                 );
-                $epp_contact->setPassword($this->generatePassword());
-                $response = $api->request(new Metaregistrar\EPP\eppCreateContactRequest($epp_contact));
 
-                $this->log(
-                    $api->getUsername() . '|eppContact',
-                    json_encode($response),
-                    'output'
-                );
+                // Update existing contact in-place rather than creating a new one
+                if (!empty($registrant)) {
+                    $response = $this->request(
+                        $api,
+                        new Metaregistrar\EPP\eppUpdateContactRequest(
+                            new Metaregistrar\EPP\eppContactHandle($registrant),
+                            null,
+                            null,
+                            $epp_contact
+                        )
+                    );
 
-                if ($response->getContactId()) {
-                    $contact['id'] = $response->getContactId();
+                    $this->log(
+                        $api->getUsername() . '|eppUpdateContact',
+                        json_encode($response),
+                        'output'
+                    );
                 }
             }
-
-            // Set new contact ID
-            $update = new NominetEppDomain($domain);
-            if (!empty($vars)) {
-                foreach ($vars as $key => $contact) {
-                    if (empty($contact['id'])) {
-                        continue;
-                    }
-
-                    $update->setRegistrant($contact['id']);
-                }
-            }
-
-            $response = $this->request(
-                $api,
-                new Metaregistrar\EPP\eppUpdateDomainRequest(new Metaregistrar\EPP\eppDomain($domain), null, null, $update)
-            );
         } catch (Throwable $e) {
             if (isset($this->Input)) {
                 $this->Input->setErrors(['exception' => ['message' => $e->getMessage()]]);
