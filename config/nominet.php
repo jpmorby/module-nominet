@@ -115,8 +115,8 @@ Configure::set('Nominet.contact_fields', [
 // DNSSEC options
 Configure::set('Nominet.dnssec_options', [
     'flags' => [
-        '256' => 'Key Signing Key (KSK)',
-        '257' => 'Zone Signing Key (ZSK)'
+        '256' => 'Zone Signing Key (ZSK)',
+        '257' => 'Key Signing Key (KSK)'
     ],
     'digest' => [
         '1' => 'SHA-1',
