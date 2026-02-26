@@ -14,6 +14,11 @@ use Blesta\Core\Util\Validate\Server;
 class Nominet extends RegistrarModule
 {
     /**
+     * @var array Cached EPP connections keyed by username
+     */
+    private $api_connections = [];
+
+    /**
      * @var array An array containing the EPP servers for live and sandbox requests
      */
     private $endpoint = [
@@ -2706,6 +2711,11 @@ class Nominet extends RegistrarModule
      */
     private function getApi($username, $password, $secure = 'false', $sandbox = 'false')
     {
+        // Return cached connection if available
+        if (isset($this->api_connections[$username])) {
+            return $this->api_connections[$username];
+        }
+
         Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'epp_connection.php');
         Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'epp_domain.php');
         Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'epp_domain_request.php');
@@ -2741,6 +2751,24 @@ class Nominet extends RegistrarModule
 
         $this->log($username . '|login', json_encode($connection), 'output', true);
 
+        // Cache the connection
+        $this->api_connections[$username] = $connection;
+
         return $connection;
+    }
+
+    /**
+     * Cleanly logout from all EPP connections on destruction
+     */
+    public function __destruct()
+    {
+        foreach ($this->api_connections as $username => $connection) {
+            try {
+                $connection->logout();
+            } catch (Throwable $e) {
+                // Silently ignore logout errors during cleanup
+            }
+        }
+        $this->api_connections = [];
     }
 }
