@@ -778,6 +778,37 @@ class Nominet extends RegistrarModule
     }
 
     /**
+     * Cancels the service on the remote server. Sets Input errors on failure,
+     * preventing the service from being canceled.
+     *
+     * @param stdClass $package A stdClass object representing the current package
+     * @param stdClass $service A stdClass object representing the current service
+     * @param stdClass $parent_package A stdClass object representing the parent
+     *  service's selected package (if the current service is an addon service)
+     * @param stdClass $parent_service A stdClass object representing the parent
+     *  service of the service being canceled (if the current service is an addon service)
+     * @return mixed null to maintain the existing meta fields or a numerically
+     *  indexed array of meta fields to be stored for this service containing:
+     *  - key The key for this meta field
+     *  - value The value for this key
+     *  - encrypted Whether or not this field should be encrypted (default 0, not encrypted)
+     * @see Module::getModule()
+     * @see Module::getModuleRow()
+     */
+    public function cancelService($package, $service, $parent_package = null, $parent_service = null)
+    {
+        if (($row = $this->getModuleRow())) {
+            $domain = $this->getServiceDomain($service);
+
+            if ($domain) {
+                $this->deleteDomain($domain, $row->id);
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Returns an array of service field to set for the service using the given input.
      *
      * @param array $vars An array of key/value input pairs
@@ -1929,6 +1960,28 @@ class Nominet extends RegistrarModule
     }
 
     /**
+     * Delete a domain through the registrar
+     *
+     * @param string $domain The domain to delete
+     * @param int $module_row_id The ID of the module row to fetch for the current module
+     * @return bool True if the domain was successfully deleted, false otherwise
+     */
+    public function deleteDomain($domain, $module_row_id = null)
+    {
+        $row = $this->getModuleRow($module_row_id);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+
+        $this->log($row->meta->username . '|eppDeleteDomainRequest', json_encode(compact('domain')), 'input', true);
+
+        $response = $this->request(
+            $api,
+            new Metaregistrar\EPP\eppDeleteDomainRequest(new Metaregistrar\EPP\eppDomain($domain))
+        );
+
+        return $response !== false;
+    }
+
+    /**
      * Transfer a domain through the registrar
      *
      * @param string $domain The domain to register
@@ -2402,25 +2455,66 @@ class Nominet extends RegistrarModule
         $row = $this->getModuleRow($module_row_id);
         $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
 
-        $this->log($row->meta->username . '|eppCreateHostRequest', json_encode(compact('vars')), 'input', true);
+        $this->log($row->meta->username . '|setNameserverIps', json_encode(compact('vars')), 'input', true);
 
-        // Add nameservers
-        $ns = [];
-        if (!empty($vars)) {
-            foreach ($vars as $nameserver => $ips) {
-                $ns[] = new Metaregistrar\EPP\eppHost($nameserver, $ips);
+        foreach ($vars as $nameserver => $ips) {
+            $host = new Metaregistrar\EPP\eppHost($nameserver, $ips);
+
+            // Check if host already exists
+            try {
+                $check = $this->request($api, new Metaregistrar\EPP\eppCheckHostRequest($host));
+                $checks = $check->getCheckedHosts();
+                $host_exists = !empty($checks) && !($checks[0]['available'] ?? true);
+            } catch (Throwable $e) {
+                $host_exists = false;
             }
-        }
 
-        // Send request to the EPP server
-        foreach ($ns as $request) {
-            $response = $this->request(
-                $api,
-                new Metaregistrar\EPP\eppCreateHostRequest($request)
-            );
+            if ($host_exists) {
+                // Get current host info to determine which IPs to add/remove
+                $info = $this->request(
+                    $api,
+                    new Metaregistrar\EPP\eppInfoHostRequest(new Metaregistrar\EPP\eppHost($nameserver))
+                );
 
-            if (!$response) {
-                return false;
+                if ($info) {
+                    // Remove old IPs
+                    $remove = new Metaregistrar\EPP\eppHost($nameserver);
+                    $current_ips = $info->getHostAddresses();
+                    if (is_array($current_ips)) {
+                        foreach ($current_ips as $ip) {
+                            $remove->addIpAddress($ip);
+                        }
+                    }
+
+                    // Add new IPs
+                    $add = new Metaregistrar\EPP\eppHost($nameserver);
+                    foreach ((array) $ips as $ip) {
+                        $add->addIpAddress($ip);
+                    }
+
+                    $response = $this->request(
+                        $api,
+                        new Metaregistrar\EPP\eppUpdateHostRequest(
+                            new Metaregistrar\EPP\eppHost($nameserver),
+                            $add,
+                            $remove
+                        )
+                    );
+
+                    if (!$response) {
+                        return false;
+                    }
+                }
+            } else {
+                // Create new host
+                $response = $this->request(
+                    $api,
+                    new Metaregistrar\EPP\eppCreateHostRequest($host)
+                );
+
+                if (!$response) {
+                    return false;
+                }
             }
         }
 
@@ -2671,6 +2765,73 @@ class Nominet extends RegistrarModule
 
             return false;
         }
+    }
+
+    /**
+     * Deletes a contact from the registry
+     *
+     * @param string $contact_id The contact ID to delete
+     * @param int $module_row_id The ID of the module row to fetch for the current module
+     * @return bool True if the contact was successfully deleted, false otherwise
+     */
+    public function deleteContact($contact_id, $module_row_id = null)
+    {
+        $row = $this->getModuleRow($module_row_id);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+
+        $this->log($row->meta->username . '|eppDeleteContactRequest', json_encode(compact('contact_id')), 'input', true);
+
+        $response = $this->request(
+            $api,
+            new Metaregistrar\EPP\eppDeleteContactRequest(new Metaregistrar\EPP\eppContactHandle($contact_id))
+        );
+
+        return $response !== false;
+    }
+
+    /**
+     * Processes pending messages from the EPP message queue
+     *
+     * @param int $module_row_id The ID of the module row to fetch for the current module
+     * @return array An array of processed messages
+     */
+    public function pollMessages($module_row_id = null)
+    {
+        $row = $this->getModuleRow($module_row_id);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+
+        $messages = [];
+
+        try {
+            $poll = new Metaregistrar\EPP\eppPollRequest(Metaregistrar\EPP\eppPollRequest::POLL_REQ);
+            $response = $this->request($api, $poll);
+
+            while ($response && $response->getResultCode() == 1301) {
+                $message_id = $response->getMessageId();
+                $messages[] = [
+                    'id' => $message_id,
+                    'count' => $response->getMessageCount(),
+                    'message' => $response->getMessage(),
+                    'date' => $response->getMessageDate()
+                ];
+
+                // Acknowledge the message
+                $ack = new Metaregistrar\EPP\eppPollRequest(Metaregistrar\EPP\eppPollRequest::POLL_ACK, $message_id);
+                $this->request($api, $ack);
+
+                // Check for more messages
+                $poll = new Metaregistrar\EPP\eppPollRequest(Metaregistrar\EPP\eppPollRequest::POLL_REQ);
+                $response = $this->request($api, $poll);
+            }
+        } catch (Throwable $e) {
+            $this->log(
+                $row->meta->username . '|eppPollRequest',
+                json_encode(['exception' => $e->getMessage()]),
+                'output'
+            );
+        }
+
+        return $messages;
     }
 
     /**
