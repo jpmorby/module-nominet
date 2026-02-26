@@ -23,14 +23,14 @@
                     </li>
                     <li>
                         <?php
-                        $this->Form->fieldCheckbox('secure', 'true', ($vars->secure ?? 'false') == 'true', ['id' => 'secure']);
-                        $this->Form->label($this->_('Nominet.row_meta.secure', true), 'secure', ['class' => 'inline']);
+                        $this->Form->fieldCheckbox('sandbox', 'true', ($vars->sandbox ?? 'false') == 'true', ['id' => 'sandbox']);
+                        $this->Form->label($this->_('Nominet.row_meta.sandbox', true), 'sandbox', ['class' => 'inline']);
                         ?>
                     </li>
                     <li>
                         <?php
-                        $this->Form->fieldCheckbox('sandbox', 'true', ($vars->sandbox ?? 'false') == 'true', ['id' => 'sandbox']);
-                        $this->Form->label($this->_('Nominet.row_meta.sandbox', true), 'sandbox', ['class' => 'inline']);
+                        $this->Form->fieldCheckbox('poll_enabled', 'true', ($vars->poll_enabled ?? 'false') == 'true', ['id' => 'poll_enabled']);
+                        $this->Form->label($this->_('Nominet.row_meta.poll_enabled', true), 'poll_enabled', ['class' => 'inline']);
                         ?>
                     </li>
                 </ul>

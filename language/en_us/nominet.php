@@ -55,6 +55,7 @@ $lang['Nominet.row_meta.username'] = 'Username';
 $lang['Nominet.row_meta.password'] = 'Password';
 $lang['Nominet.row_meta.secure'] = 'Use Secure Connection';
 $lang['Nominet.row_meta.sandbox'] = 'Sandbox';
+$lang['Nominet.row_meta.poll_enabled'] = 'Enable EPP Poll Queue Processing';
 
 
 // Errors
@@ -65,6 +66,14 @@ $lang['Nominet.!error.ns2.valid'] = 'Invalid Name Server 2';
 $lang['Nominet.!error.ns3.valid'] = 'Invalid Name Server 3';
 $lang['Nominet.!error.ns4.valid'] = 'Invalid Name Server 4';
 $lang['Nominet.!error.ns5.valid'] = 'Invalid Name Server 5';
+$lang['Nominet.!error.contact.first_name.empty'] = 'First name is required.';
+$lang['Nominet.!error.contact.last_name.empty'] = 'Last name is required.';
+$lang['Nominet.!error.contact.email.valid'] = 'A valid email address is required.';
+$lang['Nominet.!error.contact.phone.empty'] = 'Phone number is required.';
+$lang['Nominet.!error.contact.address1.empty'] = 'Address is required.';
+$lang['Nominet.!error.contact.city.empty'] = 'City is required.';
+$lang['Nominet.!error.contact.country.empty'] = 'Country is required.';
+$lang['Nominet.!error.poll_enabled.format'] = 'Poll enabled must be "true" or "false".';
 
 
 // Service info
@@ -107,13 +116,15 @@ $lang['Nominet.contact_fields.state'] = 'State';
 $lang['Nominet.contact_fields.zip'] = 'Zip Code';
 $lang['Nominet.contact_fields.country'] = 'Country';
 $lang['Nominet.contact_fields.phone'] = 'Phone';
+$lang['Nominet.contact_fields.org_name'] = 'Organization Name';
+$lang['Nominet.contact_fields.type'] = 'Registrant Type';
+$lang['Nominet.contact_fields.trad_name'] = 'Trading Name';
+$lang['Nominet.contact_fields.co_no'] = 'Company Number';
 
 
 // Contacts tab
 $lang['Nominet.tab_whois.title'] = 'Contacts';
-$lang['Nominet.tab_whois.section_admin'] = 'Administrative';
-$lang['Nominet.tab_whois.section_tech'] = 'Technical';
-$lang['Nominet.tab_whois.section_billing'] = 'Billing';
+$lang['Nominet.tab_whois.section_registrant'] = 'Registrant';
 $lang['Nominet.tab_whois.field_submit'] = 'Update Contacts';
 
 
@@ -153,10 +164,8 @@ $lang['Nominet.tab_settings.field_submit'] = 'Update Domain';
 
 // Client contacts tab
 $lang['Nominet.tab_client_whois.title'] = 'Contacts';
-$lang['Nominet.tab_client_whois.heading'] = 'Contacts';
-$lang['Nominet.tab_client_whois.section_admin'] = 'Administrative';
-$lang['Nominet.tab_client_whois.section_tech'] = 'Technical';
-$lang['Nominet.tab_client_whois.section_billing'] = 'Billing';
+$lang['Nominet.tab_client_whois.heading'] = 'Registrant Contact';
+$lang['Nominet.tab_client_whois.section_registrant'] = 'Registrant';
 $lang['Nominet.tab_client_whois.field_submit'] = 'Update Contacts';
 
 
@@ -192,3 +201,8 @@ $lang['Nominet.tab_client_settings.text_push_domain'] = 'Transfer (push) the dom
 $lang['Nominet.tab_client_settings.text_auth_code'] = 'Use this authorization code to transfer your domain to another provider.';
 $lang['Nominet.tab_client_settings.field_tag'] = 'IPS Tag';
 $lang['Nominet.tab_client_settings.field_submit'] = 'Update Domain';
+
+
+// Cron Tasks
+$lang['Nominet.getCronTasks.process_poll_name'] = 'Process Nominet Poll Queue';
+$lang['Nominet.getCronTasks.process_poll_desc'] = 'Retrieves and acknowledges pending messages from the Nominet EPP message queue.';
