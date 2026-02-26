@@ -1171,11 +1171,6 @@ class Nominet extends RegistrarModule
             'tabSettings' => Language::_('Nominet.tab_settings.title', true)
         ];
 
-        // Check if DNS Management is enabled
-        if (!$this->featureServiceEnabled('dns_management', $service)) {
-            unset($tabs['tabDnssec']);
-        }
-
         // Determine if this service has access to the settings tab
         $service_fields = $this->serviceFieldsToObject($service->fields);
         $ips_tag = $service_fields->enable_tag ?? '0';
@@ -1212,11 +1207,6 @@ class Nominet extends RegistrarModule
             'tabClientDnssec' => Language::_('Nominet.tab_client_dnssec.title', true),
             'tabClientSettings' => Language::_('Nominet.tab_client_settings.title', true)
         ];
-
-        // Check if DNS Management is enabled
-        if (!$this->featureServiceEnabled('dns_management', $service)) {
-            unset($tabs['tabClientDnssec']);
-        }
 
         // Determine if this service has access to the settings tab
         $service_fields = $this->serviceFieldsToObject($service->fields);
