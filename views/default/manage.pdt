@@ -26,7 +26,12 @@
             for ($i = 0; $i < $num_rows; $i++) {
                 ?>
             <tr<?php echo ($i % 2 == 1) ? ' class="odd_row"' : ''; ?>>
-                <td><?php echo (isset($module->rows[$i]->meta->username) ? $this->Html->safe($module->rows[$i]->meta->username) : null); ?></td>
+                <td>
+                    <?php echo (isset($module->rows[$i]->meta->username) ? $this->Html->safe($module->rows[$i]->meta->username) : null); ?>
+                    <?php if (($module->rows[$i]->meta->sandbox ?? 'false') === 'true'): ?>
+                        <span style="color:#888;font-size:0.85em;">(Sandbox)</span>
+                    <?php endif; ?>
+                </td>
                 <td class="last">
                     <a href="<?php echo $this->Html->safe($this->base_uri . 'settings/company/modules/editrow/' . (isset($module->id) ? $module->id : null) . '/' . (isset($module->rows[$i]->id) ? $module->rows[$i]->id : null) . '/'); ?>"><?php $this->_('Nominet.manage.module_rows.edit'); ?></a>
                     <?php
