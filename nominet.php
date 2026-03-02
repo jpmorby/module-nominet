@@ -63,6 +63,34 @@ class Nominet extends RegistrarModule
             if (version_compare($current_version, '1.2.0', '<')) {
                 $this->addCronTasks($this->getCronTasks());
             }
+
+            if (version_compare($current_version, '1.2.1', '<')) {
+                if (!isset($this->Record)) {
+                    Loader::loadComponents($this, ['Record']);
+                }
+
+                $rows = $this->getModuleRows();
+                foreach ($rows as $row) {
+                    // Rename 'sandbox' meta key to 'testbed'
+                    $this->Record->where('module_row_id', '=', $row->id)
+                        ->where('key', '=', 'sandbox')
+                        ->update('module_row_meta', ['key' => 'testbed']);
+
+                    // Add display_name if not already present
+                    if (!isset($row->meta->display_name)) {
+                        $username = $row->meta->username ?? '';
+                        $testbed = $row->meta->sandbox ?? 'false';
+                        $display_name = $username . ($testbed === 'true' ? ' (Testbed)' : '');
+                        $this->Record->insert('module_row_meta', [
+                            'module_row_id' => $row->id,
+                            'key' => 'display_name',
+                            'value' => $display_name,
+                            'serialized' => 0,
+                            'encrypted' => 0
+                        ]);
+                    }
+                }
+            }
         }
     }
 
