@@ -22,6 +22,7 @@ class NominetEppConnection extends eppConnection
         // Nominet extensions (declared in login)
         $this->addExtension('std-notifications', 'http://www.nominet.org.uk/epp/xml/std-notifications-1.2');
         $this->addExtension('contact-nom-ext', 'http://www.nominet.org.uk/epp/xml/contact-nom-ext-1.0');
+        $this->addExtension('secure-authinfo-transfer', 'urn:ietf:params:xml:ns:epp:secure-authinfo-transfer-1.0');
 
         // Nominet notification data uses 1.0/1.1 namespace URIs in actual XML,
         // register these for XPath resolution in poll responses
