@@ -13,7 +13,7 @@
         "row": "Nominet.module_row",
         "rows": "Nominet.module_row_plural",
         "group": "Nominet.module_group",
-        "row_key": "username"
+        "row_key": "display_name"
     },
     "package": {
         "name_key": "epp_code"

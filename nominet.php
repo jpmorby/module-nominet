@@ -193,6 +193,12 @@ class Nominet extends RegistrarModule
                 }
             }
 
+            $display_name = ($vars['username'] ?? '');
+            if (($vars['sandbox'] ?? 'false') === 'true') {
+                $display_name .= ' (Sandbox)';
+            }
+            $meta[] = ['key' => 'display_name', 'value' => $display_name, 'encrypted' => 0];
+
             return $meta;
         }
     }
@@ -238,6 +244,12 @@ class Nominet extends RegistrarModule
                     ];
                 }
             }
+
+            $display_name = ($vars['username'] ?? '');
+            if (($vars['sandbox'] ?? 'false') === 'true') {
+                $display_name .= ' (Sandbox)';
+            }
+            $meta[] = ['key' => 'display_name', 'value' => $display_name, 'encrypted' => 0];
 
             return $meta;
         }
