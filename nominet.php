@@ -2770,7 +2770,7 @@ class Nominet extends RegistrarModule
         $this->log($username . '|login', json_encode(compact('hostname', 'username', 'port', 'secure')), 'input', true);
 
         try {
-            $connection->login();
+            $connection->login(true);
         } catch (Throwable $e) {
             if (isset($this->Input)) {
                 $this->Input->setErrors(['exception' => ['message' => $e->getMessage()]]);
