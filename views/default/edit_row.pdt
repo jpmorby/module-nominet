@@ -46,12 +46,12 @@ $this->Widget->create($this->_('Nominet.edit_row.box_title', true));
 
     <div class="mb-3">
         <div class="form-check">
-            <?php $this->Form->fieldCheckbox('sandbox', 'true', ($vars->sandbox ?? 'false') == 'true', [
-                'id' => 'sandbox',
+            <?php $this->Form->fieldCheckbox('testbed', 'true', ($vars->testbed ?? 'false') == 'true', [
+                'id' => 'testbed',
                 'class' => 'form-check-input'
             ]); ?>
-            <label for="sandbox" class="form-check-label">
-                <?php $this->_('Nominet.row_meta.sandbox'); ?>
+            <label for="testbed" class="form-check-label">
+                <?php $this->_('Nominet.row_meta.testbed'); ?>
             </label>
         </div>
     </div>
