@@ -1021,16 +1021,20 @@ class Nominet extends RegistrarModule
      */
     private function generatePassword($min_length = 10, $max_length = 14)
     {
-        $pool = 'abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()';
-        $pool_size = strlen($pool);
-        $length = mt_rand(max($min_length, 5), min($max_length, 14));
-        $password = '';
+        // RFC 9154: auth codes must have >=128 bits of entropy.
+        // 25 alphanumeric chars = log2(62^25) ≈ 148 bits.
+        // Rejection sampling (accept bytes 0-247 only) eliminates modular bias.
+        $pool = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        $result = '';
 
-        for ($i = 0; $i < $length; $i++) {
-            $password .= substr($pool, mt_rand(0, $pool_size - 1), 1);
+        while (strlen($result) < 25) {
+            $byte = ord(random_bytes(1));
+            if ($byte < 248) {
+                $result .= $pool[$byte % 62];
+            }
         }
 
-        return $password;
+        return $result;
     }
 
     /**
