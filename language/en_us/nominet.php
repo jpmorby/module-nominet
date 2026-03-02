@@ -54,7 +54,7 @@ $lang['Nominet.edit_row.edit_btn'] = 'Update Account';
 $lang['Nominet.row_meta.username'] = 'Username';
 $lang['Nominet.row_meta.password'] = 'Password';
 $lang['Nominet.row_meta.secure'] = 'Use Secure Connection';
-$lang['Nominet.row_meta.sandbox'] = 'Sandbox';
+$lang['Nominet.row_meta.testbed'] = 'Testbed';
 $lang['Nominet.row_meta.poll_enabled'] = 'Enable EPP Poll Queue Processing';
 
 

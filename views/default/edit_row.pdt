@@ -23,8 +23,8 @@
                     </li>
                     <li>
                         <?php
-                        $this->Form->fieldCheckbox('sandbox', 'true', ($vars->sandbox ?? 'false') == 'true', ['id' => 'sandbox']);
-                        $this->Form->label($this->_('Nominet.row_meta.sandbox', true), 'sandbox', ['class' => 'inline']);
+                        $this->Form->fieldCheckbox('testbed', 'true', ($vars->testbed ?? 'false') == 'true', ['id' => 'testbed']);
+                        $this->Form->label($this->_('Nominet.row_meta.testbed', true), 'testbed', ['class' => 'inline']);
                         ?>
                     </li>
                     <li>

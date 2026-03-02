@@ -19,11 +19,11 @@ class Nominet extends RegistrarModule
     private $api_connections = [];
 
     /**
-     * @var array An array containing the EPP servers for live and sandbox requests
+     * @var array An array containing the EPP servers for live and testbed requests
      */
     private $endpoint = [
         'live' => ['server' => 'epp.nominet.org.uk', 'port' => 700],
-        'sandbox' => ['server' => 'testbed-epp.nominet.org.uk', 'port' => 700]
+        'testbed' => ['server' => 'testbed-epp.nominet.org.uk', 'port' => 700]
     ];
 
     /**
@@ -188,7 +188,7 @@ class Nominet extends RegistrarModule
 
         if (!empty($vars)) {
             // Set unset checkboxes
-            $checkbox_fields = ['secure', 'sandbox', 'poll_enabled'];
+            $checkbox_fields = ['secure', 'testbed', 'poll_enabled'];
 
             foreach ($checkbox_fields as $checkbox_field) {
                 if (!isset($vars[$checkbox_field])) {
@@ -224,7 +224,7 @@ class Nominet extends RegistrarModule
             $vars = $module_row->meta;
         } else {
             // Set unset checkboxes
-            $checkbox_fields = ['secure', 'sandbox', 'poll_enabled'];
+            $checkbox_fields = ['secure', 'testbed', 'poll_enabled'];
 
             foreach ($checkbox_fields as $checkbox_field) {
                 if (!isset($vars[$checkbox_field])) {
@@ -251,11 +251,11 @@ class Nominet extends RegistrarModule
      */
     public function addModuleRow(array &$vars)
     {
-        $meta_fields = ['username', 'password', 'secure', 'sandbox', 'poll_enabled'];
+        $meta_fields = ['username', 'password', 'secure', 'testbed', 'poll_enabled'];
         $encrypted_fields = ['password'];
 
         // Set unset checkboxes
-        $checkbox_fields = ['secure', 'sandbox', 'poll_enabled'];
+        $checkbox_fields = ['secure', 'testbed', 'poll_enabled'];
 
         foreach ($checkbox_fields as $checkbox_field) {
             if (!isset($vars[$checkbox_field])) {
@@ -280,8 +280,8 @@ class Nominet extends RegistrarModule
             }
 
             $display_name = ($vars['username'] ?? '');
-            if (($vars['sandbox'] ?? 'false') === 'true') {
-                $display_name .= ' (Sandbox)';
+            if (($vars['testbed'] ?? 'false') === 'true') {
+                $display_name .= ' (Testbed)';
             }
             $meta[] = ['key' => 'display_name', 'value' => $display_name, 'encrypted' => 0];
 
@@ -303,11 +303,11 @@ class Nominet extends RegistrarModule
      */
     public function editModuleRow($module_row, array &$vars)
     {
-        $meta_fields = ['username', 'password', 'secure', 'sandbox', 'poll_enabled'];
+        $meta_fields = ['username', 'password', 'secure', 'testbed', 'poll_enabled'];
         $encrypted_fields = ['password'];
 
         // Set unset checkboxes
-        $checkbox_fields = ['secure', 'sandbox', 'poll_enabled'];
+        $checkbox_fields = ['secure', 'testbed', 'poll_enabled'];
 
         foreach ($checkbox_fields as $checkbox_field) {
             if (!isset($vars[$checkbox_field])) {
@@ -332,8 +332,8 @@ class Nominet extends RegistrarModule
             }
 
             $display_name = ($vars['username'] ?? '');
-            if (($vars['sandbox'] ?? 'false') === 'true') {
-                $display_name .= ' (Sandbox)';
+            if (($vars['testbed'] ?? 'false') === 'true') {
+                $display_name .= ' (Testbed)';
             }
             $meta[] = ['key' => 'display_name', 'value' => $display_name, 'encrypted' => 0];
 
@@ -368,7 +368,7 @@ class Nominet extends RegistrarModule
                         [$this, 'validateConnection'],
                         $vars['username'],
                         $vars['secure'],
-                        $vars['sandbox']
+                        $vars['testbed']
                     ],
                     'message' => Language::_('Nominet.!error.password.valid_connection', true)
                 ]
@@ -379,10 +379,10 @@ class Nominet extends RegistrarModule
                     'message' => Language::_('Nominet.!error.secure.format', true)
                 ]
             ],
-            'sandbox' => [
+            'testbed' => [
                 'format' => [
                     'rule' => ['in_array', ['true', 'false']],
-                    'message' => Language::_('Nominet.!error.sandbox.format', true)
+                    'message' => Language::_('Nominet.!error.testbed.format', true)
                 ]
             ],
             'poll_enabled' => [
@@ -402,13 +402,13 @@ class Nominet extends RegistrarModule
      * @param string $password The Nominet password
      * @param string $username The Nominet userbane
      * @param string $secure 'true' to use a secure connection
-     * @param string $sandbox 'true' to use the sandbox server
+     * @param string $testbed 'true' to use the testbed server
      * @return bool True if the connection is valid, false otherwise
      */
-    public function validateConnection($password, $username, $secure = 'false', $sandbox = 'false')
+    public function validateConnection($password, $username, $secure = 'false', $testbed = 'false')
     {
         try {
-            $api = $this->getApi($username, $password, $secure, $sandbox);
+            $api = $this->getApi($username, $password, $secure, $testbed);
 
             // Check with the credentials with the EPP server
             $availability = $this->request($api, new Metaregistrar\EPP\eppCheckDomainRequest(['nominet.org.uk']));
@@ -1791,7 +1791,7 @@ class Nominet extends RegistrarModule
     public function checkAvailability($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         // Check with the EPP server if the domain is available
         $availability = $this->request($api, new Metaregistrar\EPP\eppCheckDomainRequest([$domain]));
@@ -1835,7 +1835,7 @@ class Nominet extends RegistrarModule
     public function getDomainInfo($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -1884,7 +1884,7 @@ class Nominet extends RegistrarModule
         $module_row_id = $service->module_row_id ?? $service->package->module_row ?? null;
 
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -1924,7 +1924,7 @@ class Nominet extends RegistrarModule
         $module_row_id = $service->module_row_id ?? $service->package->module_row ?? null;
 
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -1984,7 +1984,7 @@ class Nominet extends RegistrarModule
     {
         Loader::loadHelpers($this, ['Html']);
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         // Add contact
         $contact_id = null;
@@ -2058,7 +2058,7 @@ class Nominet extends RegistrarModule
     public function renewDomain($domain, $module_row_id = null, array $vars = [])
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         // Renew the domain
         $renew = new Metaregistrar\EPP\eppDomain($domain);
@@ -2086,7 +2086,7 @@ class Nominet extends RegistrarModule
     public function deleteDomain($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppDeleteDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2133,7 +2133,7 @@ class Nominet extends RegistrarModule
     private function pushDomain($domain, $module_row_id = null, array $vars = [])
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
 
@@ -2172,7 +2172,7 @@ class Nominet extends RegistrarModule
     public function getDomainContacts($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2247,7 +2247,7 @@ class Nominet extends RegistrarModule
     public function getDomainIsLocked($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2284,7 +2284,7 @@ class Nominet extends RegistrarModule
     public function getDomainNameServers($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2330,7 +2330,7 @@ class Nominet extends RegistrarModule
     public function lockDomain($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2423,7 +2423,7 @@ class Nominet extends RegistrarModule
     {
         Loader::loadHelpers($this, ['Html']);
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
 
@@ -2513,7 +2513,7 @@ class Nominet extends RegistrarModule
     public function setDomainNameservers($domain, $module_row_id = null, array $vars = [])
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
 
@@ -2576,7 +2576,7 @@ class Nominet extends RegistrarModule
     public function setNameserverIps(array $vars = [], $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|setNameserverIps', json_encode(compact('vars')), 'input', true);
 
@@ -2654,7 +2654,7 @@ class Nominet extends RegistrarModule
     public function unlockDomain($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2685,7 +2685,7 @@ class Nominet extends RegistrarModule
     public function updateEppCode($domain, $epp_code, $module_row_id = null, array $vars = [])
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppUpdateDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2723,7 +2723,7 @@ class Nominet extends RegistrarModule
     private function getDnssec($domain, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppInfoDomainRequest', json_encode(compact('domain')), 'input', true);
 
@@ -2764,7 +2764,7 @@ class Nominet extends RegistrarModule
     private function addDnssec($domain, $module_row_id = null, array $vars = [])
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppDnssecUpdateDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
 
@@ -2812,7 +2812,7 @@ class Nominet extends RegistrarModule
     private function deleteDnssec($domain, $module_row_id = null, array $vars = [])
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppDnssecUpdateDomainRequest', json_encode(compact('domain', 'vars')), 'input', true);
 
@@ -2900,7 +2900,7 @@ class Nominet extends RegistrarModule
     public function deleteContact($contact_id, $module_row_id = null)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $this->log($row->meta->username . '|eppDeleteContactRequest', json_encode(compact('contact_id')), 'input', true);
 
@@ -2921,7 +2921,7 @@ class Nominet extends RegistrarModule
     public function pollMessages($module_row_id = null, $max_messages = 100)
     {
         $row = $this->getModuleRowById($module_row_id);
-        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
 
         $messages = [];
 
@@ -3274,10 +3274,10 @@ class Nominet extends RegistrarModule
      * @param string $password The Nominet password
      * @param string $username The Nominet userbane
      * @param string $secure 'true' to use a secure connection
-     * @param string $sandbox 'true' to use the sandbox server
+     * @param string $testbed 'true' to use the testbed server
      * @return NominetEppConnection The NominetApi connection to the EPP server
      */
-    private function getApi($username, $password, $secure = 'false', $sandbox = 'false')
+    private function getApi($username, $password, $secure = 'false', $testbed = 'false')
     {
         if (empty($username)) {
             throw new \RuntimeException(
@@ -3302,7 +3302,7 @@ class Nominet extends RegistrarModule
         $connection = new NominetEppConnection();
 
         // Nominet requires SSL/TLS on port 700 for all environments
-        $env = $sandbox == 'true' ? 'sandbox' : 'live';
+        $env = $testbed == 'true' ? 'testbed' : 'live';
         $hostname = $this->endpoint[$env]['server'];
         $port = $this->endpoint[$env]['port'];
 
