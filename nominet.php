@@ -3309,7 +3309,7 @@ class Nominet extends RegistrarModule
         $this->log($username . '|login', json_encode(compact('hostname', 'username', 'port')), 'input', true);
 
         try {
-            if (!$connection->login()) {
+            if (!$connection->login(true)) {
                 throw new \RuntimeException('Login failed or connection could not be established');
             }
         } catch (Throwable $e) {
