@@ -56,6 +56,7 @@ $lang['Nominet.row_meta.password'] = 'Password';
 $lang['Nominet.row_meta.secure'] = 'Use Secure Connection';
 $lang['Nominet.row_meta.testbed'] = 'Testbed';
 $lang['Nominet.row_meta.poll_enabled'] = 'Enable EPP Poll Queue Processing';
+$lang['Nominet.row_meta.cost_price'] = 'Cost Price (GBP)';
 
 
 // Errors
@@ -74,6 +75,7 @@ $lang['Nominet.!error.contact.address1.empty'] = 'Address is required.';
 $lang['Nominet.!error.contact.city.empty'] = 'City is required.';
 $lang['Nominet.!error.contact.country.empty'] = 'Country is required.';
 $lang['Nominet.!error.poll_enabled.format'] = 'Poll enabled must be "true" or "false".';
+$lang['Nominet.!error.cost_price.format'] = 'Cost price must be a valid non-negative number.';
 
 
 // Service info
