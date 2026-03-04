@@ -68,6 +68,16 @@ $this->Widget->create($this->_('Nominet.add_row.box_title', true));
         </div>
     </div>
 
+    <div class="mb-3">
+        <label for="cost_price" class="form-label">
+            <?php $this->_('Nominet.row_meta.cost_price'); ?>
+        </label>
+        <?php $this->Form->fieldText('cost_price', $vars->cost_price ?? null, [
+            'id' => 'cost_price',
+            'class' => 'form-control'
+        ]); ?>
+    </div>
+
     <?php $this->Widget->footer(); ?>
     <div class="d-flex justify-content-end">
         <?php $this->Form->fieldSubmit('save', $this->_('Nominet.add_row.add_btn', true), ['class' => 'btn btn-primary']); ?>
