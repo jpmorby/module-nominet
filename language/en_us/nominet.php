@@ -58,6 +58,7 @@ $lang['Nominet.row_meta.username'] = 'Username';
 $lang['Nominet.row_meta.password'] = 'Password';
 $lang['Nominet.row_meta.secure'] = 'Use Secure Connection';
 $lang['Nominet.row_meta.sandbox'] = 'Sandbox';
+$lang['Nominet.row_meta.cost_price'] = 'Cost Price (GBP)';
 
 
 // Errors
@@ -68,6 +69,7 @@ $lang['Nominet.!error.ns2.valid'] = 'Invalid Name Server 2';
 $lang['Nominet.!error.ns3.valid'] = 'Invalid Name Server 3';
 $lang['Nominet.!error.ns4.valid'] = 'Invalid Name Server 4';
 $lang['Nominet.!error.ns5.valid'] = 'Invalid Name Server 5';
+$lang['Nominet.!error.cost_price.format'] = 'Cost price must be a valid non-negative number.';
 
 
 // Service info
