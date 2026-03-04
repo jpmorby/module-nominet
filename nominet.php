@@ -295,7 +295,7 @@ class Nominet extends RegistrarModule
      */
     public function addModuleRow(array &$vars)
     {
-        $meta_fields = ['username', 'password', 'secure', 'testbed', 'poll_enabled'];
+        $meta_fields = ['username', 'password', 'secure', 'testbed', 'poll_enabled', 'cost_price'];
         $encrypted_fields = ['password'];
 
         // Set unset checkboxes
@@ -347,7 +347,7 @@ class Nominet extends RegistrarModule
      */
     public function editModuleRow($module_row, array &$vars)
     {
-        $meta_fields = ['username', 'password', 'secure', 'testbed', 'poll_enabled'];
+        $meta_fields = ['username', 'password', 'secure', 'testbed', 'poll_enabled', 'cost_price'];
         $encrypted_fields = ['password'];
 
         // Set unset checkboxes
@@ -434,7 +434,13 @@ class Nominet extends RegistrarModule
                     'rule' => ['in_array', ['true', 'false']],
                     'message' => Language::_('Nominet.!error.poll_enabled.format', true)
                 ]
-            ]
+            ],
+            'cost_price' => [
+                'format' => [
+                    'rule' => ['matches', '/^\d+(\.\d{1,4})?$/'],
+                    'message' => Language::_('Nominet.!error.cost_price.format', true)
+                ]
+            ],
         ];
 
         return $rules;
