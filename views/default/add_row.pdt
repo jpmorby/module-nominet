@@ -33,6 +33,12 @@
                         $this->Form->label($this->_('Nominet.row_meta.poll_enabled', true), 'poll_enabled', ['class' => 'inline']);
                         ?>
                     </li>
+                    <li>
+                        <?php
+                        $this->Form->label($this->_('Nominet.row_meta.cost_price', true), 'cost_price');
+                        $this->Form->fieldText('cost_price', ($vars->cost_price ?? null), ['id' => 'cost_price', 'class' => 'block']);
+                        ?>
+                    </li>
                 </ul>
             </div>
 
