@@ -15,6 +15,50 @@ Thank you for your business!',
     ]
 ]);
 
+// Transfer email templates — sent when a customer places a domain transfer order.
+// {module.username} resolves to the Nominet EPP username, which is also the IPS tag.
+Configure::set('Nominet.transfer_templates', [
+    'en_us' => [
+        'lang' => 'en_us',
+        'text' => 'Thank you for your domain transfer order!
+
+Domain: {service.domain}
+
+IMPORTANT — Action required to complete your transfer:
+
+Because .uk domains use an IPS tag system rather than standard EPP transfers,
+you need to instruct your CURRENT registrar/host to "re-tag" or "push" the
+domain to us. Here is what to do:
+
+1. Contact your current registrar or hosting provider.
+2. Ask them to re-tag the domain {service.domain} to IPS tag: {module.username}
+   (This may also be described as a "registrar change" or "push transfer".)
+3. Once re-tagged, your domain will automatically come under our management.
+
+If you have any questions, please do not hesitate to contact us.
+
+Thank you for your business!',
+        'html' => '<p>Thank you for your domain transfer order!</p>
+<p><strong>Domain:</strong> {service.domain}</p>
+<hr>
+<h3>IMPORTANT — Action required to complete your transfer</h3>
+<p>Because .uk domains use an IPS tag system rather than standard EPP transfers,
+you need to instruct your <strong>current registrar/host</strong> to
+&ldquo;re-tag&rdquo; or &ldquo;push&rdquo; the domain to us.</p>
+<p>Here is what to do:</p>
+<ol>
+  <li>Contact your current registrar or hosting provider.</li>
+  <li>Ask them to re-tag the domain <strong>{service.domain}</strong> to IPS tag:
+      <strong>{module.username}</strong><br>
+      <em>(This may also be described as a &ldquo;registrar change&rdquo; or
+      &ldquo;push transfer&rdquo;.)</em></li>
+  <li>Once re-tagged, your domain will automatically come under our management.</li>
+</ol>
+<p>If you have any questions, please do not hesitate to contact us.</p>
+<p>Thank you for your business!</p>'
+    ]
+]);
+
 // All available TLDs
 Configure::set('Nominet.tlds', [
     '.uk',
