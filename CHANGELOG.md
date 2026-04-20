@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.2.3] - 2026-04-20
+
+### Added
+- Transfer email template with IPS tag re-tagging instructions sent to customers on .uk domain transfer orders
+- Exposed `{module.username}` as an available email tag so the IPS tag resolves dynamically in templates
+
+### Fixed
+- `.uk domain transfers no longer blocked at checkout with "domain not available"` — `checkTransferAvailability()` now returns true for registered domains
+- `addService()` no longer attempts to register an already-registered domain when the order type is a transfer
+- `transferDomain()` no longer returns an unsupported error; service is created and customer is emailed re-tag instructions
+
+## [1.2.2] - 2026-03-04
+
+### Added
+- `cost_price` meta field per module row (account) for tracking wholesale domain cost in GBP
+- `getTldPricing()` and `getFilteredTldPricing()` methods for retrieving TLD pricing data
+
+## [1.2.1] - 2026-03-02
+
+### Added
+- Sandbox indicator shown next to account username in module group account list
+
+### Changed
+- Renamed `sandbox` meta key to `testbed` to match Nominet terminology; existing rows migrated automatically on upgrade
+
+### Fixed
+- EPP login password now wrapped in CDATA to handle XML special characters
+
 ## [1.2.0] - 2026-02-26
 
 ### Added
