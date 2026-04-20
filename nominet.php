@@ -792,39 +792,43 @@ class Nominet extends RegistrarModule
 
             // Only provision the service if 'use_module' is true
             if ($vars['use_module'] == 'true') {
-                // Get contact from client
-                if (!isset($this->Clients)) {
-                    Loader::loadModels($this, ['Clients']);
-                }
-                if (!isset($this->Contacts)) {
-                    Loader::loadModels($this, ['Contacts']);
-                }
+                // For transfers, skip domain registration — the domain already exists.
+                // transferDomain() will be called separately by Blesta to handle the re-tag flow.
+                if (($vars['type'] ?? 'register') !== 'transfer') {
+                    // Get contact from client
+                    if (!isset($this->Clients)) {
+                        Loader::loadModels($this, ['Clients']);
+                    }
+                    if (!isset($this->Contacts)) {
+                        Loader::loadModels($this, ['Contacts']);
+                    }
 
-                $client = $this->Clients->get($vars['client_id']);
-                if ($client) {
-                    $contact_numbers = $this->Contacts->getNumbers($client->contact_id);
-                }
+                    $client = $this->Clients->get($vars['client_id']);
+                    if ($client) {
+                        $contact_numbers = $this->Contacts->getNumbers($client->contact_id);
+                    }
 
-                // Register domain
-                $params = [
-                    'contact' => [
-                        'org_name' => $client->company ?? '',
-                        'first_name' => $client->first_name ?? '',
-                        'last_name' => $client->last_name ?? '',
-                        'address1' => $client->address1 ?? '',
-                        'city' => $client->city ?? '',
-                        'state' => $client->state ?? '',
-                        'zip' => $client->zip ?? '',
-                        'country' => $client->country ?? '',
-                        'email' => $client->email ?? '',
-                        'phone' => $this->formatPhone(
-                            isset($contact_numbers[0]) ? $contact_numbers[0]->number : null,
-                            $client->country
-                        )
-                    ],
-                    'ns' => $vars['ns'] ?? (array) $package->meta->ns
-                ];
-                $this->registerDomain($vars['domain'], $row->id, $params);
+                    // Register domain
+                    $params = [
+                        'contact' => [
+                            'org_name' => $client->company ?? '',
+                            'first_name' => $client->first_name ?? '',
+                            'last_name' => $client->last_name ?? '',
+                            'address1' => $client->address1 ?? '',
+                            'city' => $client->city ?? '',
+                            'state' => $client->state ?? '',
+                            'zip' => $client->zip ?? '',
+                            'country' => $client->country ?? '',
+                            'email' => $client->email ?? '',
+                            'phone' => $this->formatPhone(
+                                isset($contact_numbers[0]) ? $contact_numbers[0]->number : null,
+                                $client->country
+                            )
+                        ],
+                        'ns' => $vars['ns'] ?? (array) $package->meta->ns
+                    ];
+                    $this->registerDomain($vars['domain'], $row->id, $params);
+                }
             }
         } else {
             $this->Input->setErrors(
@@ -1883,8 +1887,27 @@ class Nominet extends RegistrarModule
      */
     public function checkTransferAvailability($domain, $module_row_id = null)
     {
-        // Nominet transfers operates as “push” transfers requested by the current registrar,
-        // therefore we cannot request a transfer as is not included in Nominet's standard EPP implementation.
+        // .uk transfers are done via IPS tag change (re-tagging by the current registrar),
+        // not standard EPP pull transfers. A domain is available for this process if it
+        // is already registered (i.e., not available for new registration).
+        $row = $this->getModuleRowById($module_row_id);
+        if (!$row) {
+            return false;
+        }
+
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->testbed);
+        $availability = $this->request($api, new Metaregistrar\EPP\eppCheckDomainRequest([$domain]));
+
+        if ($availability == false) {
+            return false;
+        }
+
+        $checks = $availability->getCheckedDomains();
+        foreach ($checks as $check) {
+            // Domain can be re-tagged (transferred) if it is already registered
+            return !($check['available'] ?? true);
+        }
+
         return false;
     }
 
@@ -2175,14 +2198,11 @@ class Nominet extends RegistrarModule
      */
     public function transferDomain($domain, $module_row_id = null, array $vars = [])
     {
-        // Nominet transfers operates as “push” transfers requested by the current registrar,
-        // therefore we cannot request a transfer as is not included in Nominet's standard EPP implementation.
-        // See Nominet::pushDomain()
-        if (isset($this->Input)) {
-            $this->Input->setErrors($this->getCommonError('unsupported'));
-        }
-
-        return false;
+        // .uk transfers are not standard EPP pull transfers. The current registrar must
+        // re-tag the domain to our IPS tag. We create the service record and the welcome
+        // email (configured in Nominet.transfer_templates) instructs the customer to
+        // contact their current registrar and ask for a re-tag to our IPS tag.
+        return true;
     }
 
     /**
