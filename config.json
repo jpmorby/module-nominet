@@ -1,5 +1,5 @@
 {
-    "version": "1.2.2",
+    "version": "1.2.3",
     "type": "registrar",
     "name": "Nominet.name",
     "description": "Nominet.description",
@@ -22,7 +22,7 @@
         "name_key": "domain"
     },
     "email_tags": {
-        "module": [],
+        "module": ["username"],
         "package": ["epp_code"],
         "service": ["domain"]
     },
