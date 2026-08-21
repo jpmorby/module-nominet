@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.0.2] - 2026-08-21
+
+### Added
+- Nominet EPP extensions: contact-nom-ext and std-notifications namespaces
+- EPP poll queue processing cron task with Nominet notification parsing, gated by a per-account `poll_enabled` feature switch (defaults to off)
+- Domain delete, contact delete, and host update EPP operations
+- EPP connection caching and proper session logout
+- Contact validation for Nominet registrant fields
+- DNSSEC tabs now shown unconditionally, with algorithm/digest type dropdowns prefixed by their numeric identifiers
+- `(Testbed)` indicator next to the username in the module rows list and group account listboxes, backed by a computed `display_name` meta field used as `row_key`
+- `cost_price` per-account meta field, with `getTldPricing()` / `getFilteredTldPricing()` implementations for domain pricing
+- Support for .uk domain transfers via IPS tag re-tagging: `checkTransferAvailability()` allows checkout to proceed, `addService()` skips registration for transfers, and `transferDomain()` lets the service be created while the customer is emailed re-tag instructions (`{module.username}` now exposed as an email tag)
+
+### Fixed
+- Phone number formatting: strip trunk prefix and prevent double `+` prefix
+- DNSSEC tab showing stale data after add/delete (records now fetched after processing, not before)
+- EPP login password now wrapped in CDATA to handle XML special characters
+- Renamed the `sandbox` module row meta key and terminology to `testbed` to match Nominet's terminology, with an upgrade migration for existing rows
+
 ## [1.2.0] - 2026-02-26
 
 ### Added
