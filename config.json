@@ -22,7 +22,9 @@
         "name_key": "domain"
     },
     "email_tags": {
-        "module": [],
+        "module": [
+            "username"
+        ],
         "package": [
             "epp_code"
         ],
