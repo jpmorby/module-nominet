@@ -251,6 +251,11 @@ class Nominet extends RegistrarModule
      */
     private function getRowRules(&$vars)
     {
+        // Treat an empty cost_price as unset so it defaults to no cost price override
+        if (isset($vars['cost_price']) && $vars['cost_price'] === '') {
+            unset($vars['cost_price']);
+        }
+
         $rules = [
             'username' => [
                 'valid' => [
@@ -289,6 +294,7 @@ class Nominet extends RegistrarModule
             ],
             'cost_price' => [
                 'format' => [
+                    'if_set' => true,
                     'rule' => ['matches', '/^\d+(\.\d{1,4})?$/'],
                     'message' => Language::_('Nominet.!error.cost_price.format', true)
                 ]
