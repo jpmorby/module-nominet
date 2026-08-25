@@ -77,6 +77,7 @@ $lang['Nominet.!error.contact.address1.empty'] = 'Address is required.';
 $lang['Nominet.!error.contact.city.empty'] = 'City is required.';
 $lang['Nominet.!error.contact.country.empty'] = 'Country is required.';
 $lang['Nominet.!error.poll_enabled.format'] = 'Poll enabled must be "true" or "false".';
+$lang['Nominet.!error.contacts_not_updated'] = 'No contact updates were applied.';
 
 
 // Service info

@@ -14,7 +14,7 @@ use Blesta\Core\Util\Validate\Server;
 class Nominet extends RegistrarModule
 {
     /**
-     * @var array Cached EPP connections keyed by username
+     * @var array Cached EPP connections keyed by environment + username
      */
     private $api_connections = [];
 
@@ -60,7 +60,9 @@ class Nominet extends RegistrarModule
     public function upgrade($current_version)
     {
         if (version_compare($this->getVersion(), $current_version, '>')) {
-            if (version_compare($current_version, '1.2.0', '<')) {
+            // The process_poll cron task was introduced in 2.0.2; register it for any
+            // install upgrading from an earlier version that doesn't already have it
+            if (version_compare($current_version, '2.0.2', '<')) {
                 $this->addCronTasks($this->getCronTasks());
             }
         }
@@ -918,14 +920,14 @@ class Nominet extends RegistrarModule
      */
     public function cancelService($package, $service, $parent_package = null, $parent_service = null)
     {
-        if (($row = $this->getModuleRowById($service->module_row_id ?? $package->module_row ?? null))) {
-            $domain = $this->getServiceDomain($service);
-
-            if ($domain) {
-                $this->deleteDomain($domain, $row->id);
-            }
-        }
-
+        // Intentionally do not send a registry domain:delete command here. Canceling a
+        // service in Blesta only means Blesta should stop managing/billing the domain;
+        // it does not mean the customer wants the domain registration destroyed.
+        // Actively deleting the domain would immediately release it (or send it to
+        // pending-delete/redemption), which can result in unintended, irreversible loss
+        // of the customer's domain. Instead, simply stop managing it here and let the
+        // registration lapse naturally at its registry expiration if it isn't renewed,
+        // consistent with how other Blesta registrar modules handle cancellation.
         return null;
     }
 
@@ -2468,6 +2470,11 @@ class Nominet extends RegistrarModule
         // Get the existing registrant contact ID from the domain
         $registrant = $info->getDomainRegistrant();
 
+        // Initialize so that if every contact is skipped, or there is no registrant to
+        // update against, this method correctly reports failure instead of an undefined
+        // variable evaluating truthy below
+        $response = false;
+
         try {
             // Update contacts
             foreach ($vars as $contact) {
@@ -2526,6 +2533,10 @@ class Nominet extends RegistrarModule
             );
 
             return false;
+        }
+
+        if ($response === false && isset($this->Input)) {
+            $this->Input->setErrors(['contacts' => ['not_updated' => Language::_('Nominet.!error.contacts_not_updated', true)]]);
         }
 
         return $response !== false;
@@ -2978,6 +2989,12 @@ class Nominet extends RegistrarModule
 
                 $messages[] = $message_data;
 
+                // Persist the message before acknowledging it. Acknowledging a message
+                // permanently dequeues it from the Nominet poll queue, so anything not
+                // durably recorded here (and, where actionable, reflected on the
+                // associated service) before the ACK is lost forever.
+                $this->recordPollMessage($row, $message_data);
+
                 // Acknowledge the message
                 $ack = new Metaregistrar\EPP\eppPollRequest(Metaregistrar\EPP\eppPollRequest::POLL_ACK, $message_id);
                 $this->request($api, $ack);
@@ -2995,6 +3012,98 @@ class Nominet extends RegistrarModule
         }
 
         return $messages;
+    }
+
+    /**
+     * Durably persists a poll message and applies any actionable service state
+     * change it implies. Must be called before the message is ACKed, since ACKing
+     * permanently dequeues it from Nominet's poll queue.
+     *
+     * @param stdClass $row The module row the message was polled from
+     * @param array $message_data The parsed poll message data
+     */
+    private function recordPollMessage($row, array $message_data)
+    {
+        $type = $message_data['type'] ?? null;
+        $log_key = $row->meta->username . '|pollMessage|' . ($type !== null ? $type : 'unhandled_poll_message_type');
+
+        // At minimum, every message is logged with its full parsed content before
+        // being ACKed, including unknown/unparsed types (marked distinctly above)
+        $this->log($log_key, json_encode($message_data), 'input', true);
+
+        if ($type === null || empty($message_data['domains'])) {
+            return;
+        }
+
+        // Nominet notification types that represent a definitive change to the
+        // domain's registry state, mapped to the Blesta service status staff
+        // should see reflected. Types not listed here (e.g. data-quality notices)
+        // are logged above but do not automatically change service status.
+        $status_map = [
+            NominetEppPollResponse::TYPE_DOMAIN_CANCELLED => 'canceled',
+            NominetEppPollResponse::TYPE_DOMAINS_SUSPENDED => 'suspended',
+            NominetEppPollResponse::TYPE_REGISTRAR_CHANGE => 'canceled',
+        ];
+
+        if (!array_key_exists($type, $status_map)) {
+            return;
+        }
+
+        Loader::loadModels($this, ['Services']);
+
+        foreach ($message_data['domains'] as $domain) {
+            if (empty($domain) || !isset($this->module->id)) {
+                continue;
+            }
+
+            $services = $this->Services->searchServiceFields($this->module->id, 'domain', $domain);
+            $service = $services[0] ?? null;
+
+            if (!$service) {
+                $this->log(
+                    $row->meta->username . '|pollMessage|serviceLookup',
+                    json_encode(['domain' => $domain, 'type' => $type, 'result' => 'not_found']),
+                    'output',
+                    false
+                );
+                continue;
+            }
+
+            $new_status = $status_map[$type];
+
+            try {
+                if ($service->status !== $new_status) {
+                    // Bypass the module hook: this status change reflects a registry-side
+                    // event that already happened, it should not trigger another
+                    // registrar API call back out to Nominet
+                    $this->Services->edit($service->id, ['status' => $new_status], true);
+                }
+
+                $this->log(
+                    $row->meta->username . '|pollMessage|serviceUpdate',
+                    json_encode([
+                        'service_id' => $service->id,
+                        'domain' => $domain,
+                        'type' => $type,
+                        'new_status' => $new_status,
+                        'data' => $message_data['data']
+                    ]),
+                    'output',
+                    true
+                );
+            } catch (Throwable $e) {
+                $this->log(
+                    $row->meta->username . '|pollMessage|serviceUpdate',
+                    json_encode([
+                        'service_id' => $service->id,
+                        'domain' => $domain,
+                        'exception' => $e->getMessage()
+                    ]),
+                    'output',
+                    false
+                );
+            }
+        }
     }
 
     /**
@@ -3275,6 +3384,14 @@ class Nominet extends RegistrarModule
             $row = $this->ModuleManager->getRow($module_row_id);
         }
 
+        // A specific row ID was requested but could not be resolved: do not silently
+        // fall back to some other row, since that could act on a domain using the
+        // wrong Nominet account. Only default to the first available row below when
+        // no row was requested at all.
+        if (!$row && $module_row_id) {
+            return null;
+        }
+
         // Final fallback: use the first available module row.
         // Handles client context where both $service->module_row_id and
         // $package->module_row may be null.
@@ -3304,9 +3421,15 @@ class Nominet extends RegistrarModule
             );
         }
 
+        // Key the connection cache by environment + username, not username alone, so
+        // the same username configured for both live and testbed doesn't reuse
+        // whichever connection happened to be opened first.
+        $env = $sandbox == 'true' ? 'sandbox' : 'live';
+        $cache_key = $env . ':' . $username;
+
         // Return cached connection if available
-        if (isset($this->api_connections[$username])) {
-            return $this->api_connections[$username];
+        if (isset($this->api_connections[$cache_key])) {
+            return $this->api_connections[$cache_key];
         }
 
         Loader::load(dirname(__FILE__) . DS . 'lib' . DS . 'epp_connection.php');
@@ -3320,7 +3443,6 @@ class Nominet extends RegistrarModule
         $connection = new NominetEppConnection();
 
         // Nominet requires SSL/TLS on port 700 for all environments
-        $env = $sandbox == 'true' ? 'sandbox' : 'live';
         $hostname = $this->endpoint[$env]['server'];
         $port = $this->endpoint[$env]['port'];
 
@@ -3350,7 +3472,7 @@ class Nominet extends RegistrarModule
         $this->log($username . '|login', json_encode($connection), 'output', true);
 
         // Cache the connection
-        $this->api_connections[$username] = $connection;
+        $this->api_connections[$cache_key] = $connection;
 
         return $connection;
     }
