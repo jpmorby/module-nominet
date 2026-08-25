@@ -682,7 +682,7 @@ class Nominet extends RegistrarModule
         }
 
         // Return service fields
-        return [
+        $fields = [
             [
                 'key' => 'domain',
                 'value' => $vars['domain'],
@@ -694,6 +694,17 @@ class Nominet extends RegistrarModule
                 'encrypted' => 0
             ]
         ];
+
+        // .uk transfers complete out-of-band (the customer's current registrar re-tags
+        // the domain to us) and are not confirmed here. Track that this service is
+        // awaiting re-tag confirmation so transferDomain() does not report success until
+        // that confirmation actually happens.
+        if (($vars['type'] ?? 'register') === 'transfer') {
+            $fields[] = ['key' => 'transfer_pending', 'value' => '1', 'encrypted' => 0];
+            $fields[] = ['key' => 'transfer_requested_date', 'value' => date('Y-m-d H:i:s'), 'encrypted' => 0];
+        }
+
+        return $fields;
     }
 
     /**
@@ -1712,7 +1723,13 @@ class Nominet extends RegistrarModule
         $checks = $availability->getCheckedDomains();
         foreach ($checks as $check) {
             // Domain can be re-tagged (transferred) if it is already registered
-            return !($check['available'] ?? true);
+            if ($check['available'] ?? true) {
+                return false;
+            }
+
+            // Guard against creating a duplicate service for a domain that is already
+            // tagged to this account: there is nothing to transfer in that case
+            return !$this->isDomainTaggedToAccount($domain, $row);
         }
 
         return false;
@@ -1994,10 +2011,107 @@ class Nominet extends RegistrarModule
     public function transferDomain($domain, $module_row_id = null, array $vars = [])
     {
         // .uk transfers are not standard EPP pull transfers. The current registrar must
-        // re-tag the domain to our IPS tag. We create the service record and the welcome
-        // email (configured in Nominet.transfer_templates) instructs the customer to
-        // contact their current registrar and ask for a re-tag to our IPS tag.
-        return true;
+        // re-tag the domain to our IPS tag out-of-band; there is no EPP command we can
+        // send to make this happen. The welcome email (configured in
+        // Nominet.transfer_templates) instructs the customer to contact their current
+        // registrar and ask for a re-tag to our IPS tag.
+        //
+        // Report success only once the re-tag is actually confirmed via a live domain:info
+        // lookup - never assume it happened just because the transfer was requested,
+        // otherwise the service gets activated (and billed) for a domain the customer may
+        // not yet control.
+        $row = $this->getModuleRow($module_row_id);
+        if (!$row) {
+            return false;
+        }
+
+        $service = $this->getServiceByDomain($domain);
+        $confirmed = $this->isDomainTaggedToAccount($domain, $row);
+
+        if ($confirmed) {
+            if ($service && ($service->status ?? null) !== 'active') {
+                Loader::loadModels($this, ['Services']);
+                $this->Services->edit($service->id, ['status' => 'active'], true);
+            }
+
+            $this->log(
+                $row->meta->username . '|transferDomain',
+                json_encode(['domain' => $domain, 'result' => 'confirmed']),
+                'output',
+                true
+            );
+
+            return true;
+        }
+
+        // Not yet re-tagged. Surface a staff-visible warning once the request has been
+        // outstanding beyond a reasonable window, rather than leaving it silently pending
+        // forever with no indication anything is wrong.
+        $timed_out = false;
+        if ($service) {
+            $service_fields = $this->serviceFieldsToObject($service->fields ?? []);
+            $requested_date = $service_fields->transfer_requested_date ?? null;
+            $timed_out = $requested_date && strtotime($requested_date) < strtotime('-14 days');
+        }
+
+        $this->log(
+            $row->meta->username . '|transferDomain',
+            json_encode([
+                'domain' => $domain,
+                'result' => $timed_out ? 'timeout' : 'pending',
+                'message' => $timed_out
+                    ? 'Re-tag has not completed within 14 days of the transfer request'
+                    : 'Awaiting registrar re-tag confirmation'
+            ]),
+            'output',
+            !$timed_out
+        );
+
+        return false;
+    }
+
+    /**
+     * Determines whether a domain's current sponsoring registrar (IPS tag) matches
+     * this account, i.e. whether a pending .uk re-tag transfer has completed.
+     *
+     * @param string $domain The domain to check
+     * @param stdClass $row The module row representing the account to check against
+     * @return bool True if the domain is currently tagged to this account
+     */
+    private function isDomainTaggedToAccount($domain, $row)
+    {
+        $api = $this->getApi($row->meta->username, $row->meta->password, $row->meta->secure, $row->meta->sandbox);
+
+        $info = $this->request(
+            $api,
+            new Metaregistrar\EPP\eppInfoDomainRequest(new Metaregistrar\EPP\eppDomain($domain))
+        );
+
+        if (!$info) {
+            return false;
+        }
+
+        // Nominet's EPP gateway reports the domain's current IPS tag as the standard EPP
+        // sponsoring client ID (clID); the re-tag is complete once it matches our own tag
+        return strcasecmp((string) $info->getDomainClientId(), (string) $row->meta->username) === 0;
+    }
+
+    /**
+     * Looks up the Blesta service associated with a domain managed by this module.
+     *
+     * @param string $domain The domain name to look up
+     * @return stdClass|null The matching service, or null if none was found
+     */
+    private function getServiceByDomain($domain)
+    {
+        if (!isset($this->module) || empty($this->module->id)) {
+            return null;
+        }
+
+        Loader::loadModels($this, ['Services']);
+        $services = $this->Services->searchServiceFields($this->module->id, 'domain', $domain);
+
+        return $services[0] ?? null;
     }
 
     /**
