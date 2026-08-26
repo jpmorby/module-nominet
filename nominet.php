@@ -158,14 +158,23 @@ class Nominet extends RegistrarModule
             }
 
             if ($task_id) {
-                $task_vars = ['enabled' => $task['enabled']];
-                if ($task['type'] === 'time') {
-                    $task_vars['time'] = $task['type_value'];
-                } else {
-                    $task_vars['interval'] = $task['type_value'];
-                }
+                // CronTasks::addTaskRun() inserts without any uniqueness check, so adding a
+                // run for a task that already has one silently duplicates it and the task
+                // then runs twice per interval. Only add a run if none exists yet - this
+                // matters when re-registering a task an earlier version already installed.
+                $existing_run = $this->CronTasks
+                    ->getTaskRunByKey($task['key'], $task['dir'], false, $task['task_type']);
 
-                $this->CronTasks->addTaskRun($task_id, $task_vars);
+                if (!$existing_run) {
+                    $task_vars = ['enabled' => $task['enabled']];
+                    if ($task['type'] === 'time') {
+                        $task_vars['time'] = $task['type_value'];
+                    } else {
+                        $task_vars['interval'] = $task['type_value'];
+                    }
+
+                    $this->CronTasks->addTaskRun($task_id, $task_vars);
+                }
             }
         }
     }
