@@ -37,6 +37,10 @@ $lang['Nominet.manage.module_groups.confirm_delete'] = 'Are you sure you want to
 
 $lang['Nominet.manage.module_groups.no_results'] = 'There is no Accounts Group';
 
+// Cron tasks
+$lang['Nominet.getCronTasks.check_pending_transfers_name'] = 'Check Pending .uk Transfers';
+$lang['Nominet.getCronTasks.check_pending_transfers_desc'] = 'Rechecks .uk domain transfers awaiting registrar re-tag confirmation and activates them once the tag change is confirmed by the registry.';
+
 
 // Options
 $lang['Nominet.order_options.roundrobin'] = 'Evenly Distribute Among Servers';

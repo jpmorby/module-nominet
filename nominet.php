@@ -45,6 +45,204 @@ class Nominet extends RegistrarModule
     }
 
     /**
+     * Performs any necessary bootstraping actions
+     */
+    public function install()
+    {
+        $this->addCronTasks($this->getCronTasks());
+    }
+
+    /**
+     * Performs migration of data from $current_version (the current installed version)
+     * to the given file set version. Sets Input errors on failure, preventing
+     * the module from being upgraded.
+     *
+     * @param string $current_version The current installed version of this module
+     */
+    public function upgrade($current_version)
+    {
+        // Upgrade if possible
+        if (version_compare($this->getVersion(), $current_version, '>')) {
+            // Upgrade to 2.0.4: add the pending transfer recheck cron task
+            if (version_compare($current_version, '2.0.4', '<')) {
+                $this->addCronTasks($this->getCronTasks());
+            }
+        }
+    }
+
+    /**
+     * Performs any necessary cleanup actions
+     *
+     * @param int $module_id The ID of the module being uninstalled
+     * @param bool $last_instance True if $module_id is the last instance
+     *  across all companies for this module, false otherwise
+     */
+    public function uninstall($module_id, $last_instance)
+    {
+        Loader::loadModels($this, ['CronTasks']);
+
+        $cron_tasks = $this->getCronTasks();
+
+        if ($last_instance) {
+            // Remove the cron tasks
+            foreach ($cron_tasks as $task) {
+                $cron_task = $this->CronTasks->getByKey($task['key'], $task['dir'], $task['task_type']);
+                if ($cron_task) {
+                    $this->CronTasks->deleteTask($cron_task->id, $task['task_type'], $task['dir']);
+                }
+            }
+        }
+
+        // Remove individual cron task runs
+        foreach ($cron_tasks as $task) {
+            $cron_task_run = $this->CronTasks
+                ->getTaskRunByKey($task['key'], $task['dir'], false, $task['task_type']);
+            if ($cron_task_run) {
+                $this->CronTasks->deleteTaskRun($cron_task_run->task_run_id);
+            }
+        }
+    }
+
+    /**
+     * Runs the cron task identified by the key used to create the cron task
+     *
+     * @param string $key The key used to create the cron task
+     * @see CronTasks::add()
+     */
+    public function cron($key)
+    {
+        switch ($key) {
+            case 'check_pending_transfers':
+                $this->checkPendingTransfers();
+                break;
+        }
+    }
+
+    /**
+     * Retrieves cron tasks available to this module along with their default values
+     *
+     * @return array A list of cron tasks
+     */
+    private function getCronTasks()
+    {
+        return [
+            [
+                'key' => 'check_pending_transfers',
+                'task_type' => 'module',
+                'dir' => 'nominet',
+                'name' => Language::_('Nominet.getCronTasks.check_pending_transfers_name', true),
+                'description' => Language::_('Nominet.getCronTasks.check_pending_transfers_desc', true),
+                'type' => 'interval',
+                'type_value' => 1440,
+                'enabled' => 1
+            ]
+        ];
+    }
+
+    /**
+     * Attempts to add new cron tasks for this module
+     *
+     * @param array $tasks A list of cron tasks to add
+     */
+    private function addCronTasks(array $tasks)
+    {
+        Loader::loadModels($this, ['CronTasks']);
+        foreach ($tasks as $task) {
+            $task_id = $this->CronTasks->add($task);
+
+            if (!$task_id) {
+                $cron_task = $this->CronTasks->getByKey($task['key'], $task['dir'], $task['task_type']);
+                if ($cron_task) {
+                    $task_id = $cron_task->id;
+                }
+            }
+
+            if ($task_id) {
+                $task_vars = ['enabled' => $task['enabled']];
+                if ($task['type'] === 'time') {
+                    $task_vars['time'] = $task['type_value'];
+                } else {
+                    $task_vars['interval'] = $task['type_value'];
+                }
+
+                $this->CronTasks->addTaskRun($task_id, $task_vars);
+            }
+        }
+    }
+
+    /**
+     * Rechecks .uk domains awaiting re-tag confirmation and activates any service
+     * whose sponsoring registrar (IPS tag) now matches this account. Nothing else
+     * ever re-invokes transferDomain() once a transfer is marked pending, so this
+     * cron task is the only mechanism that flips a pending .uk transfer to active.
+     */
+    private function checkPendingTransfers()
+    {
+        if (empty($this->module->id)) {
+            return;
+        }
+
+        Loader::loadModels($this, ['Services']);
+
+        $pending_services = $this->Services->searchServiceFields($this->module->id, 'transfer_pending', '1');
+
+        foreach ($pending_services as $pending_service) {
+            $service = $this->Services->get($pending_service->id);
+            if (!$service) {
+                continue;
+            }
+
+            $row = $this->getModuleRow($service->module_row_id);
+            if (!$row) {
+                continue;
+            }
+
+            $domain = $this->getServiceDomain($service);
+            if (!$domain) {
+                continue;
+            }
+
+            if ($this->isDomainTaggedToAccount($domain, $row)) {
+                // Re-tag confirmed: activate the service and clear the pending flag so
+                // this service is not rechecked again
+                if (($service->status ?? null) !== 'active') {
+                    $this->Services->edit($service->id, ['status' => 'active'], true);
+                }
+                $this->Services->editField($service->id, ['key' => 'transfer_pending', 'value' => '0']);
+
+                $this->log(
+                    $row->meta->username . '|checkPendingTransfers',
+                    json_encode(['domain' => $domain, 'result' => 'confirmed']),
+                    'output',
+                    true
+                );
+
+                continue;
+            }
+
+            // Not yet re-tagged. Surface a staff-visible warning once the request has been
+            // outstanding beyond a reasonable window, rather than leaving it silently pending
+            // forever with no indication anything is wrong.
+            $service_fields = $this->serviceFieldsToObject($service->fields ?? []);
+            $requested_date = $service_fields->transfer_requested_date ?? null;
+            $timed_out = $requested_date && strtotime($requested_date) < strtotime('-14 days');
+
+            $this->log(
+                $row->meta->username . '|checkPendingTransfers',
+                json_encode([
+                    'domain' => $domain,
+                    'result' => $timed_out ? 'timeout' : 'pending',
+                    'message' => $timed_out
+                        ? 'Re-tag has not completed within 14 days of the transfer request'
+                        : 'Awaiting registrar re-tag confirmation'
+                ]),
+                'output',
+                !$timed_out
+            );
+        }
+    }
+
+    /**
      * Returns the rendered view of the manage module page.
      *
      * @param mixed $module A stdClass object representing the module and its rows
