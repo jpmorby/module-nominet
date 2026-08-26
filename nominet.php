@@ -2309,7 +2309,13 @@ class Nominet extends RegistrarModule
         Loader::loadModels($this, ['Services']);
         $services = $this->Services->searchServiceFields($this->module->id, 'domain', $domain);
 
-        return $services[0] ?? null;
+        if (empty($services[0])) {
+            return null;
+        }
+
+        // searchServiceFields() returns bare service rows without ->fields populated;
+        // re-fetch so callers reading service fields (e.g. transfer_requested_date) see them
+        return $this->Services->get($services[0]->id) ?: null;
     }
 
     /**
